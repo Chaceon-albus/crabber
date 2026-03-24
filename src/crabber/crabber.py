@@ -16,8 +16,8 @@ from crabber.credential import CredentialManager
 class Crabber:
 
     def __init__(self, name: str, room_id: int, cred_manager: CredentialManager) -> None:
-        self.name = name
         self.uid = -1
+        self.name = name
         self.room_id = room_id
         self.scheduler: Optional[AsyncIOScheduler] = None
         self.cred_manager = cred_manager
@@ -28,6 +28,7 @@ class Crabber:
         self.refresh_event: Optional[asyncio.Event] = None
 
         self.jobs: list[Job] = []
+        self.tasks: list[asyncio.Task] = []
 
         self._is_ready = threading.Event()
 
@@ -78,7 +79,8 @@ class Crabber:
 
         self.danmaku = LiveDanmaku(self.room_id, credential=self.cred_manager.credential)
 
-        asyncio.create_task(self.danmaku.connect()) # run danmaku connection in the background
+        self.tasks.append(asyncio.create_task(self.danmaku.connect())) # run danmaku connection in the background
+        self.tasks.append(asyncio.create_task(self._listen_refresh_events())) # listen for credential refresh events in the background
 
         while self.danmaku.get_status() < 2:
             # wait until danmaku is ready
@@ -88,6 +90,24 @@ class Crabber:
 
         # update some information of the crabber after danmaku is ready
         self.uid = room_info.get("room_info", {}).get("uid", -1)
+
+
+    async def _listen_refresh_events(self) -> None:
+        # looks like a useless function since credential is a reference
+        while True:
+            if not self.refresh_event:
+                await asyncio.sleep(1)
+                continue
+
+            await self.refresh_event.wait()
+            self.refresh_event.clear()
+
+            logger.debug(f"'{self.name}' received credential refresh signal, applying updates...")
+
+            try:
+                pass
+            except Exception as e:
+                logger.exception(f"error occurred while handling credential update: {e}")
 
 
     def add_handler(self, event_name: str, handler: Callable):
@@ -129,6 +149,7 @@ class Crabber:
 
     def stop(self) -> None:
         for job in self.jobs: job.remove()
+        for task in self.tasks: task.cancel()
         if self.scheduler and self.scheduler.running: self.scheduler.shutdown(wait=False)
         if self.loop and self.loop.is_running():
             self.loop.call_soon_threadsafe(self.loop.stop)
