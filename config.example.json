@@ -1,1 +1,13 @@
-{}
+{
+    "credential_refresh_interval": 3600,
+    "crabbers": [
+        {
+            "name": "nickname",
+            "room_id": 12345,
+            "components": [],
+            "telemetry": {
+                "enable": false
+            }
+        }
+    ]
+}
