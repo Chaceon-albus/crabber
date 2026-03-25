@@ -65,9 +65,14 @@ class Crabber:
         except Exception as e:
             logger.error(f"crabber '{self.name}' loop encountered error: {e}")
         finally:
-            # self._cancel_all_tasks()
-            self.loop.close()
-            logger.debug(f"crabber '{self.name}' loop closed")
+            try:
+                if self.danmaku: self.loop.run_until_complete(self.danmaku.disconnect())
+                # self._clean_up_tasks()
+            except Exception as e:
+                logger.error(f"error during cleanup: {e}")
+            finally:
+                self.loop.close()
+                logger.debug(f"crabber '{self.name}' loop closed")
 
 
     async def _bootstrap(self) -> None:
@@ -118,7 +123,6 @@ class Crabber:
         def _register():
             if self.danmaku:
                 self.danmaku.add_event_listener(event_name, handler)
-                logger.info(f"{self.name} registered handler for event {event_name}")
             else:
                 logger.error(f"failed to register handler: danmaku is not initialized")
 
@@ -153,7 +157,7 @@ class Crabber:
         if self.scheduler and self.scheduler.running: self.scheduler.shutdown(wait=False)
         if self.loop and self.loop.is_running():
             self.loop.call_soon_threadsafe(self.loop.stop)
-            logger.info(f"stopping crabber '{self.name}'...")
+            logger.info(f"stopping crabber {self.name}...")
 
 
 if __name__ == "__main__":

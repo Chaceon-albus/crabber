@@ -20,3 +20,7 @@ def wait_for_shutdown() -> None:
     signal.signal(signal.SIGTERM, signal_handler)
 
     shutdown_event.wait()
+
+
+def coin_to_cny(coin: int|float, rate: float = 0.001) -> float:
+    return coin * rate

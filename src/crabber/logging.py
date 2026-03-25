@@ -7,7 +7,7 @@ logger = logging.getLogger("crabber")
 handler = logging.StreamHandler()
 handler.setFormatter(
     logging.Formatter(
-        fmt="[%(levelname)s][%(asctime)s] %(name)s - %(module)s->%(funcName)s()@L%(lineno)d: %(message)s",
+        fmt="[%(levelname)-4.4s][%(asctime)s] %(name)s - %(module)s->%(funcName)s()@L%(lineno)d: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
     )
 )

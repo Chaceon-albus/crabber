@@ -4,7 +4,14 @@
         {
             "name": "nickname",
             "room_id": 12345,
-            "components": [],
+            "components": [
+                {"type": "danmu_logger"},
+                {"type": "gift_logger"},
+                {
+                    "type": "event_logger",
+                    "events": ["GUARD_BUY", "USER_TOAST_MSG", "SUPER_CHAT_MESSAGE"]
+                }
+            ],
             "telemetry": {
                 "enable": false
             }
