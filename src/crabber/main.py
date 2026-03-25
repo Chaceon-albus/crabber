@@ -1,7 +1,7 @@
 import argparse
 import json
 
-from crabber.logging import logger, set_level, choices
+from crabber.logging import logger, set_level, choices, configure_logging
 from crabber.crabber import Crabber
 from crabber.credential import CredentialManager
 from crabber.components.safe_handler import create_safe_handler
@@ -26,6 +26,9 @@ def main() -> None:
 
     with open(args.conf, mode="r", encoding="utf-8") as f:
         config = json.load(f)
+
+    log_file = config.get("log_file", "")
+    if log_file: configure_logging(log_file=log_file, screen_output=True)
 
     crabbers: list[Crabber] = []
     bili_cm = CredentialManager(fn=args.cred, interval=config.get("credential_refresh_interval", 3600))
