@@ -84,7 +84,7 @@ class Crabber:
 
         self.danmaku = LiveDanmaku(self.room_id, credential=self.cred_manager.credential)
 
-        self.tasks.append(asyncio.create_task(self.danmaku.connect())) # run danmaku connection in the background
+        self.tasks.append(asyncio.create_task(self._keep_danmaku_connected())) # run danmaku connection in the background
         self.tasks.append(asyncio.create_task(self._listen_refresh_events())) # listen for credential refresh events in the background
 
         while self.danmaku.get_status() < 2:
@@ -95,6 +95,18 @@ class Crabber:
 
         # update some information of the crabber after danmaku is ready
         self.uid = room_info.get("room_info", {}).get("uid", -1)
+
+
+    async def _keep_danmaku_connected(self) -> None:
+        while True:
+            if self.danmaku:
+                if self.danmaku.get_status() in [0, 4, 5]:
+                    try:
+                        await self.danmaku.connect()
+                    except Exception as e:
+                        logger.exception(f"danmaku error: {e}")
+
+            await asyncio.sleep(1)
 
 
     async def _listen_refresh_events(self) -> None:
