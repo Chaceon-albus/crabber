@@ -19,4 +19,6 @@ def create_safe_handler(handler_func: Callable, crabber_name: str, cmp_name: str
                 exc_info=True,
             )
 
+    wrapped_handler.__name__ = cmp_name # use component name
+
     return wrapped_handler

@@ -27,7 +27,7 @@ class CredentialManager:
             logger.info(f"credential file loaded from {self.cred_file}")
         else:
             cred_json = {}
-            logger.info("no credential file provided or file does not exist, using empty credential")
+            logger.warning("no credential file provided or file does not exist, using empty credential")
 
         self.credential = biliapi.Credential(**cred_json)
 

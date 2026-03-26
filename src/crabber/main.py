@@ -51,13 +51,18 @@ def main() -> None:
 
                 cmp_module = __import__(f"crabber.components.{cmp_name}", fromlist=["get_handler"])
                 cmp_events = component.get("events", cmp_module.default_events)
-                handler = cmp_module.get_handler(**cmp_config)
+
+                handler = cmp_module.get_handler(
+                    ctx=crabber,
+                    **cmp_config,
+                )
 
                 handler = create_safe_handler(handler, cname, cmp_name)
 
                 for event_name in cmp_events:
                     crabber.add_handler(event_name, handler)
-                    logger.info(f"{cname} registered {cmp_name} for event {event_name}")
+
+                logger.info(f"added {cmp_name} component to {cname}")
 
             except Exception as e:
                 logger.error(f"failed to register component: {e}")
