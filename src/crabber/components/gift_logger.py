@@ -1,12 +1,23 @@
+import asyncio
+
+from datetime import datetime
 from typing import Callable, Awaitable
-from crabber.logging import logger
+
+from crabber.crabber import Crabber
 from crabber.misc import coin_to_cny
 
 
 default_events = ["SEND_GIFT", "USER_TOAST_MSG", "SUPER_CHAT_MESSAGE"]
 
 
-def get_handler(*args, **kwargs) -> Callable[[dict], Awaitable[None]]:
+def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[None]]:
+
+    logger = ctx.logger
+
+    is_online = False
+    online_income = 0.0
+    offline_income = 0.0
+    status_change_date = datetime.now()
 
     async def handler(event: dict) -> None:
         cmd = event.get("data", {}).get("cmd", "unknown")
@@ -47,7 +58,44 @@ def get_handler(*args, **kwargs) -> Callable[[dict], Awaitable[None]]:
                 logger.warning(f"received unsupported event: {cmd}")
 
 
-        # value_in_cny...
+        if is_online:
+            nonlocal online_income
+            online_income += value_in_cny
+        else:
+            nonlocal offline_income
+            offline_income += value_in_cny
+
+
+    async def _on_room_online() -> None:
+        pass
+
+    async def _on_room_offline() -> None:
+        pass
+
+    async def _on_task_cancel() -> None:
+        logger.info(f"开播期间收到礼物￥{online_income:.2f}，离线期间收到礼物￥{offline_income:.2f}")
+
+
+    async def _watch_online_status() -> None:
+        try:
+
+            while True:
+
+                try:
+                    # have no idea how to get online status in time without flooding bilibili api
+                    pass
+                except Exception as e:
+                    logger.exception(e)
+
+                await asyncio.sleep(1)
+
+        except asyncio.CancelledError:
+            logger.debug(f"received cancel signal")
+            await _on_task_cancel()
+            raise
+
+
+    ctx.add_task(_watch_online_status())
 
 
     return handler
