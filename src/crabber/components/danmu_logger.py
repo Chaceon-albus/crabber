@@ -1,12 +1,15 @@
 from typing import Callable, Awaitable
-from crabber.logging import logger
+
+from crabber.crabber import Crabber
 from crabber.misc import jsonify
 
 
 default_events = ["DANMU_MSG"]
 
 
-def get_handler(*args, **kwargs) -> Callable[[dict], Awaitable[None]]:
+def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[None]]:
+
+    logger = ctx.logger
 
     async def handler(event: dict) -> None:
         info = event.get("data", {}).get("info", {})

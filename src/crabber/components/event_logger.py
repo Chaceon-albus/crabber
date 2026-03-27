@@ -7,7 +7,7 @@ from crabber.misc import jsonify
 default_events = ["ALL"]
 
 
-def get_handler(ctx: Crabber,*args, **kwargs) -> Callable[[dict], Awaitable[None]]:
+def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[None]]:
 
     logger = ctx.logger
 
