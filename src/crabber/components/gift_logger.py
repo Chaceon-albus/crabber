@@ -1,10 +1,10 @@
 import asyncio
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable, Awaitable
 
 from crabber.crabber import Crabber
-from crabber.misc import coin_to_cny
+from crabber.misc import coin_to_cny, format_timedelta
 
 
 default_events = ["SEND_GIFT", "USER_TOAST_MSG", "SUPER_CHAT_MESSAGE"]
@@ -17,7 +17,6 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
     is_online = False
     online_income = 0.0
     offline_income = 0.0
-    status_change_date = datetime.now()
 
     async def handler(event: dict) -> None:
         cmd = event.get("data", {}).get("cmd", "unknown")
@@ -66,24 +65,32 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
             offline_income += value_in_cny
 
 
-    async def _on_room_online() -> None:
-        pass
+    async def _on_room_online(dura: timedelta) -> None:
+        logger.info(f"距离上次直播结束经过了{format_timedelta(dura)}，下播期间收到的礼物￥{offline_income:.2f}")
 
-    async def _on_room_offline() -> None:
-        pass
+    async def _on_room_offline(dura: timedelta) -> None:
+        logger.info(f"本次直播时长为{format_timedelta(dura)}，共收到的礼物￥{online_income:.2f}")
 
     async def _on_task_cancel() -> None:
-        logger.info(f"开播期间收到礼物￥{online_income:.2f}，离线期间收到礼物￥{offline_income:.2f}")
+        logger.info(f"未提交的记录：开播期间收到礼物￥{online_income:.2f}，离线期间收到礼物￥{offline_income:.2f}")
 
 
-    async def _watch_online_status() -> None:
+    async def _watch_live_status() -> None:
         try:
 
             while True:
 
                 try:
-                    # have no idea how to get online status in time without flooding bilibili api
-                    pass
+                    nonlocal is_online
+                    if ctx.room_info.is_online != is_online:
+
+                        is_online = ctx.room_info.is_online
+
+                        if is_online:
+                            await _on_room_online(ctx.room_info.start_time - ctx.room_info.end_time)
+                        else:
+                            await _on_room_offline(ctx.room_info.end_time - ctx.room_info.start_time)
+
                 except Exception as e:
                     logger.exception(e)
 
@@ -95,7 +102,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
             raise
 
 
-    ctx.add_task(_watch_online_status())
+    ctx.add_task(_watch_live_status())
 
 
     return handler

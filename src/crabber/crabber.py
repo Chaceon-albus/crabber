@@ -2,6 +2,7 @@ import asyncio
 import logging
 import threading
 
+from datetime import datetime
 from typing import Optional, Callable
 
 import bilibili_api as biliapi
@@ -12,6 +13,7 @@ from bilibili_api.live import LiveRoom, LiveDanmaku
 
 from crabber.logging import logger
 from crabber.credential import CredentialManager
+from crabber.room_info import RoomInfo
 
 
 class Crabber:
@@ -24,6 +26,7 @@ class Crabber:
         self.uid = -1
         self.name = name
         self.room_id = room_id
+        self.room_info = RoomInfo(id=room_id)
         self.scheduler: Optional[AsyncIOScheduler] = None
         self.cred_manager = cred_manager
 
@@ -99,10 +102,24 @@ class Crabber:
             # wait until danmaku is ready
             await asyncio.sleep(1)
 
-        room_info = await self.room.get_room_info() # type: ignore
+        room_info = (await self.room.get_room_info()).get("room_info", {}) # type: ignore
 
         # update some information of the crabber after danmaku is ready
-        self.uid = room_info.get("room_info", {}).get("uid", -1)
+        self.uid = room_info.get("uid", -1)
+        self.room_info.area = room_info.get("area_name", "")
+        self.room_info.title = room_info.get("title", "")
+        self.room_info.is_online = (room_info.get("live_status", 0) == 1)
+
+        if self.room_info.is_online:
+            self.room_info.start_time = datetime.fromtimestamp(
+                room_info.get("live_start_time", int(datetime.now().timestamp()))
+            )
+
+        self.logger.debug(f"update room info: {self.room_info}")
+
+        live_status_handler = self._get_live_status_handler()
+        for event_name in ["LIVE", "PREPARING", "ROOM_CHANGE"]:
+            self.add_handler(event_name, live_status_handler)
 
 
     async def _keep_danmaku_connected(self) -> None:
@@ -133,6 +150,34 @@ class Crabber:
                 pass
             except Exception as e:
                 self.logger.exception(f"error occurred while handling credential update: {e}")
+
+
+    def _get_live_status_handler(self) -> Callable[[dict], asyncio._CoroutineLike]:
+
+        async def handler(event: dict) -> None:
+            data = event.get("data", {})
+            cmd = data.get("cmd", "")
+            event_room_id = data.get("roomid", -1)
+
+            if event_room_id != self.room_id: return # ignore events from other rooms
+
+            match cmd:
+                case "LIVE":
+                    self.room_info.is_online = True
+                    if "live_time" in data:
+                        # multiple events may be received during the live status transition,
+                        # but only the first one contains the live_time field,
+                        # so it's safe to update start_time whenever it's present
+                        self.room_info.start_time = datetime.fromtimestamp(data["live_time"])
+                case "PREPARING":
+                    self.room_info.is_online = False
+                    self.room_info.end_time = datetime.fromtimestamp(data.get("send_time", datetime.now().timestamp()))
+                case "ROOM_CHANGE":
+                    self.room_info.area = data.get("area_name", self.room_info.area)
+                    self.room_info.title = data.get("title", self.room_info.title)
+                case _: pass
+
+        return handler
 
 
     def add_handler(self, event_name: str, handler: Callable):

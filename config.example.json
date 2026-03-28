@@ -9,7 +9,7 @@
                 {"type": "gift_logger"},
                 {
                     "type": "event_logger",
-                    "events": ["GUARD_BUY", "USER_TOAST_MSG", "SUPER_CHAT_MESSAGE"]
+                    "events": ["GUARD_BUY", "SYS_MSG"]
                 }
             ],
             "telemetry": {
