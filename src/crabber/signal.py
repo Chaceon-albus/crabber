@@ -1,0 +1,17 @@
+import signal
+import threading
+
+from crabber.logging import logger
+
+
+def wait_for_shutdown() -> None:
+    shutdown_event = threading.Event()
+
+    def signal_handler(signum, _):
+        logger.info(f"received signal {signum}, shutting down...")
+        shutdown_event.set()
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    shutdown_event.wait()

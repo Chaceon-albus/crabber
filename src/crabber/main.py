@@ -5,7 +5,7 @@ from crabber.logging import logger, set_level, choices, configure_logging
 from crabber.crabber import Crabber
 from crabber.credential import CredentialManager
 from crabber.components.safe_handler import create_safe_handler
-from crabber.misc import wait_for_shutdown
+from crabber.signal import wait_for_shutdown
 
 
 def main() -> None:
