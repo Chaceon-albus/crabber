@@ -91,8 +91,8 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
         _clear_records() # clear records after status change
 
     async def _on_task_cancel() -> None:
-        sum_str = summary(gift_income, guard_income, sc_income)
-        logger.info(f"未提交的记录：{sum_str}")
+        if sum_str := summary(gift_income, guard_income, sc_income):
+            logger.info(f"未提交的记录：{sum_str}")
 
 
     async def _watch_live_status() -> None:
@@ -129,7 +129,4 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
 
 def summary(gift: float, guard: float, sc: float) -> str:
-    if gift + guard + sc == 0:
-        return "未收到礼物"
-
-    return f"收到礼物￥{gift:.2f}，大航海￥{guard:.2f}，SC￥{sc:.2f}，共￥{gift + guard + sc:.2f}"
+    return f"收到礼物￥{gift:.2f}，大航海￥{guard:.2f}，SC￥{sc:.2f}，共￥{gift + guard + sc:.2f}" if gift + guard + sc > 0 else ""
