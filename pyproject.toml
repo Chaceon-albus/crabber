@@ -1,7 +1,7 @@
 [project]
 name = "crabber"
 version = "0.1.0"
-description = "Add your description here"
+description = "Can you crab a crab like a crabber can crab a crab?"
 readme = "README.md"
 authors = [
     { name = "capric98", email = "42015599+capric98@users.noreply.github.com" }
@@ -10,6 +10,7 @@ requires-python = ">=3.14"
 dependencies = [
     "aiohttp>=3.13.3",
     "bilibili-api-python>=17.4.1",
+    "tortoise-orm>=1.1.7",
 ]
 
 [project.scripts]
