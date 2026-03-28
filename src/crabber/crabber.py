@@ -157,12 +157,15 @@ class Crabber:
         async def handler(event: dict) -> None:
             data = event.get("data", {})
             cmd = data.get("cmd", "")
-            event_room_id = data.get("roomid", -1)
+            event_room_id = data.get("roomid", "unknown") # this field is string instead of int
 
-            if event_room_id != self.room_id: return # ignore events from other rooms
+            if event_room_id != f"{self.room_id}":
+                self.logger.debug(f"ignoring live status related event: {event_room_id} != {self.room_id}")
+                return
 
             match cmd:
                 case "LIVE":
+                    self.logger.debug(f"received LIVE event with data: {data}")
                     self.room_info.is_online = True
                     if "live_time" in data:
                         # multiple events may be received during the live status transition,
@@ -170,9 +173,11 @@ class Crabber:
                         # so it's safe to update start_time whenever it's present
                         self.room_info.start_time = datetime.fromtimestamp(data["live_time"])
                 case "PREPARING":
+                    self.logger.debug(f"received PREPARING event with data: {data}")
                     self.room_info.is_online = False
                     self.room_info.end_time = datetime.fromtimestamp(data.get("send_time", datetime.now().timestamp()))
                 case "ROOM_CHANGE":
+                    self.logger.debug(f"received ROOM_CHANGE event with data: {data}")
                     self.room_info.area = data.get("area_name", self.room_info.area)
                     self.room_info.title = data.get("title", self.room_info.title)
                 case _: pass

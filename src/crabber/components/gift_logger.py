@@ -1,6 +1,6 @@
 import asyncio
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Callable, Awaitable
 
 from crabber.crabber import Crabber
@@ -19,6 +19,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
     gift_income = 0.0
     guard_income = 0.0
     sc_income = 0.0
+
 
     async def handler(event: dict) -> None:
         cmd = event.get("data", {}).get("cmd", "unknown")
