@@ -1,9 +1,9 @@
 import asyncio
 
-from datetime import timedelta
 from typing import Callable, Awaitable
 
 from crabber.crabber import Crabber
+from crabber.room_info import RoomInfo
 from crabber.misc import coin_to_cny, format_timedelta
 
 
@@ -75,7 +75,9 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
         sc_income = 0.0
 
 
-    async def _on_room_online(dura: timedelta) -> None:
+    async def _on_room_online(info: RoomInfo) -> None:
+        # this.start_time - previous.end_time
+        dura = info.start_time - info.end_time
         logger.info(f"距离上次直播结束经过了{format_timedelta(dura)}")
 
         if sum_str := summary(gift_income, guard_income, sc_income):
@@ -83,7 +85,9 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
         _clear_records() # clear records after status change
 
-    async def _on_room_offline(dura: timedelta) -> None:
+    async def _on_room_offline(info: RoomInfo) -> None:
+        # this.end_time - this.start_time
+        dura = info.end_time - info.start_time
         logger.info(f"本次直播时长为{format_timedelta(dura)}")
 
         if sum_str := summary(gift_income, guard_income, sc_income):
@@ -91,9 +95,9 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
         _clear_records() # clear records after status change
 
-    async def _on_task_cancel() -> None:
+    async def _on_task_cancel(info: RoomInfo) -> None:
         if sum_str := summary(gift_income, guard_income, sc_income):
-            logger.info(f"未提交的记录：{sum_str}")
+            logger.info(f"未提交的记录：{sum_str}, start={info.start_time}, end={info.end_time}")
 
 
     async def _watch_live_status() -> None:
@@ -108,9 +112,9 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                         is_online = ctx.room_info.is_online
 
                         if is_online:
-                            await _on_room_online(ctx.room_info.start_time - ctx.room_info.end_time)
+                            await _on_room_online(ctx.room_info)
                         else:
-                            await _on_room_offline(ctx.room_info.end_time - ctx.room_info.start_time)
+                            await _on_room_offline(ctx.room_info)
 
                 except Exception as e:
                     logger.exception(e)
@@ -119,7 +123,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
         except asyncio.CancelledError:
             logger.debug(f"received cancel signal")
-            await _on_task_cancel()
+            await _on_task_cancel(ctx.room_info)
             raise
 
 
