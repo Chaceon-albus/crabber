@@ -16,9 +16,9 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
     is_online = False
 
-    gift_income = 0.0
-    guard_income = 0.0
-    sc_income = 0.0
+    gift_revenue = 0.0
+    guard_revenue = 0.0
+    sc_revenue = 0.0
 
 
     async def handler(event: dict) -> None:
@@ -26,7 +26,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
         data = event.get("data", {}).get("data", {})
         value_in_cny = 0.0
 
-        nonlocal gift_income, guard_income, sc_income
+        nonlocal gift_revenue, guard_revenue, sc_revenue
 
         match cmd:
 
@@ -42,7 +42,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                 coin = data.get("total_coin", price * num)
                 value_in_cny = coin_to_cny(coin)
 
-                gift_income += value_in_cny
+                gift_revenue += value_in_cny
                 logger.info(f"{user} {action}了 {gift_name}×{num}，价值￥{value_in_cny:.2f}")
 
             case "USER_TOAST_MSG":
@@ -53,7 +53,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                 price = data.get("price", 0) # this is total price, not unit price
                 value_in_cny = coin_to_cny(price)
 
-                guard_income += value_in_cny
+                guard_revenue += value_in_cny
                 logger.info(f"{user} 开通了{num}个{unit}的{role}，价值￥{value_in_cny:.2f}")
 
             case "SUPER_CHAT_MESSAGE":
@@ -61,7 +61,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                 message = data.get("message", "")
                 value_in_cny = data.get("price", 0) # CNY price
 
-                sc_income += value_in_cny
+                sc_revenue += value_in_cny
                 logger.info(f"{user} 发送了￥{value_in_cny:.2f}的醒目留言: {message}")
 
             case _:
@@ -69,10 +69,10 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
 
     def _clear_records() -> None:
-        nonlocal gift_income, guard_income, sc_income
-        gift_income = 0.0
-        guard_income = 0.0
-        sc_income = 0.0
+        nonlocal gift_revenue, guard_revenue, sc_revenue
+        gift_revenue = 0.0
+        guard_revenue = 0.0
+        sc_revenue = 0.0
 
 
     async def _on_room_online(info: RoomInfo) -> None:
@@ -80,7 +80,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
         dura = info.start_time - info.end_time
         logger.info(f"距离上次直播结束经过了{format_timedelta(dura)}")
 
-        if sum_str := summary(gift_income, guard_income, sc_income):
+        if sum_str := summary(gift_revenue, guard_revenue, sc_revenue):
             logger.info(sum_str)
 
         _clear_records() # clear records after status change
@@ -90,13 +90,13 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
         dura = info.end_time - info.start_time
         logger.info(f"本次直播时长为{format_timedelta(dura)}")
 
-        if sum_str := summary(gift_income, guard_income, sc_income):
+        if sum_str := summary(gift_revenue, guard_revenue, sc_revenue):
             logger.info(sum_str)
 
         _clear_records() # clear records after status change
 
     async def _on_task_cancel(info: RoomInfo) -> None:
-        if sum_str := summary(gift_income, guard_income, sc_income):
+        if sum_str := summary(gift_revenue, guard_revenue, sc_revenue):
             logger.info(f"未提交的记录：{sum_str}, start={info.start_time}, end={info.end_time}")
 
 
