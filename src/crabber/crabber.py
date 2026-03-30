@@ -108,6 +108,7 @@ class Crabber:
         self.uid = room_info.get("uid", -1)
         self.room_info.area = room_info.get("area_name", "")
         self.room_info.title = room_info.get("title", "")
+        self.room_info.cover = room_info.get("cover", "")
         self.room_info.is_online = (room_info.get("live_status", 0) == 1)
 
         if self.room_info.is_online:
@@ -172,6 +173,9 @@ class Crabber:
                         # but only the first one contains the live_time field,
                         # so it's safe to update start_time whenever it's present
                         self.room_info.start_time = datetime.fromtimestamp(data["live_time"])
+                        # force to update cover, since idk how to update it from other events
+                        room_info = (await self.room.get_room_info()).get("room_info", {}) # type: ignore
+                        self.room_info.cover = room_info.get("cover", self.room_info.cover)
                 case "PREPARING":
                     self.logger.debug(f"received PREPARING event with data: {data}")
                     self.room_info.is_online = False
@@ -180,6 +184,7 @@ class Crabber:
                     self.logger.debug(f"received ROOM_CHANGE event with data: {data}")
                     self.room_info.area = data.get("area_name", self.room_info.area)
                     self.room_info.title = data.get("title", self.room_info.title)
+                    # self.room_info.cover = data.get("cover", self.room_info.cover) # no cover field is found
                 case _: pass
 
         return handler
