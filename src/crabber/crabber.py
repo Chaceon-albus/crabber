@@ -103,21 +103,24 @@ class Crabber:
             # wait until danmaku is ready
             await asyncio.sleep(1)
 
-        room_info = (await self.room.get_room_info()).get("room_info", {}) # type: ignore
+        try:
+            room_info = (await self.room.get_room_info()).get("room_info", {}) # type: ignore
 
-        # update some information of the crabber after danmaku is ready
-        self.uid = room_info.get("uid", -1)
-        self.room_info.area = room_info.get("area_name", "")
-        self.room_info.title = room_info.get("title", "")
-        self.room_info.cover = room_info.get("cover", "")
-        self.room_info.is_online = (room_info.get("live_status", 0) == 1)
+            # update some information of the crabber after danmaku is ready
+            self.uid = room_info.get("uid", -1)
+            self.room_info.area = room_info.get("area_name", "")
+            self.room_info.title = room_info.get("title", "")
+            self.room_info.cover = room_info.get("cover", "")
+            self.room_info.is_online = (room_info.get("live_status", 0) == 1)
 
-        if self.room_info.is_online:
-            self.room_info.start_time = datetime.fromtimestamp(
-                room_info.get("live_start_time", int(datetime.now().timestamp()))
-            )
-
-        self.logger.debug(f"update room info: {self.room_info}")
+            if self.room_info.is_online:
+                self.room_info.start_time = datetime.fromtimestamp(
+                    room_info.get("live_start_time", int(datetime.now().timestamp()))
+                )
+        except Exception as e:
+            self.logger.exception(f"failed to fetch initial room info: {e}")
+        else:
+            self.logger.debug(f"update room info: {self.room_info}")
 
         live_status_handler = self._get_live_status_handler()
         for event_name in ["LIVE", "PREPARING", "ROOM_CHANGE"]:
@@ -166,26 +169,36 @@ class Crabber:
                 return
 
             match cmd:
+
                 case "LIVE":
                     self.logger.debug(f"received LIVE event with data: {data}")
-                    self.room_info.is_online = True
+
                     if "live_time" in data:
                         # multiple events may be received during the live status transition,
                         # but only the first one contains the live_time field,
                         # so it's safe to update start_time whenever it's present
                         self.room_info.start_time = datetime.fromtimestamp(data["live_time"])
-                        # force to update cover, since idk how to update it from other events
-                        room_info = (await self.room.get_room_info()).get("room_info", {}) # type: ignore
-                        self.room_info.cover = room_info.get("cover", self.room_info.cover)
+
+                        try:
+                            # force to update cover, since idk how to update it from other events
+                            room_info = (await self.room.get_room_info()).get("room_info", {}) # type: ignore
+                            self.room_info.cover = room_info.get("cover", self.room_info.cover)
+                        except Exception as e:
+                            self.logger.exception(e)
+
+                    # postpone setting status, in case the cover is not updated in time
+                    self.room_info.is_online = True
+
                 case "PREPARING":
                     self.logger.debug(f"received PREPARING event with data: {data}")
                     self.room_info.is_online = False
                     self.room_info.end_time = datetime.fromtimestamp(data.get("send_time", datetime.now().timestamp()))
+
                 case "ROOM_CHANGE":
                     self.logger.debug(f"received ROOM_CHANGE event with data: {data}")
                     self.room_info.area = data.get("area_name", self.room_info.area)
                     self.room_info.title = data.get("title", self.room_info.title)
-                    # self.room_info.cover = data.get("cover", self.room_info.cover) # no cover field is found
+
                 case _:
                     self.logger.debug(f"received unhandled live status related event:\n{jsonify(event)}")
 
