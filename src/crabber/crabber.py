@@ -14,6 +14,7 @@ from bilibili_api.live import LiveRoom, LiveDanmaku
 from crabber.logging import logger
 from crabber.credential import CredentialManager
 from crabber.room_info import RoomInfo
+from crabber.misc import jsonify
 
 
 class Crabber:
@@ -158,10 +159,10 @@ class Crabber:
         async def handler(event: dict) -> None:
             data = event.get("data", {})
             cmd = data.get("cmd", "")
-            event_room_id = data.get("roomid", "unknown") # this field is string instead of int
+            event_room_id = data.get("roomid", -1)
 
-            if event_room_id != f"{self.room_id}":
-                self.logger.debug(f"ignoring live status related event: {event_room_id} != {self.room_id}")
+            if event_room_id != self.room_id:
+                self.logger.debug(f"ignoring live status related event: {event_room_id} != {self.room_id}\n{jsonify(event)}")
                 return
 
             match cmd:
@@ -185,7 +186,8 @@ class Crabber:
                     self.room_info.area = data.get("area_name", self.room_info.area)
                     self.room_info.title = data.get("title", self.room_info.title)
                     # self.room_info.cover = data.get("cover", self.room_info.cover) # no cover field is found
-                case _: pass
+                case _:
+                    self.logger.debug(f"received unhandled live status related event:\n{jsonify(event)}")
 
         return handler
 
@@ -234,6 +236,10 @@ class Crabber:
 
         self.logger.debug(f"added task {coro.__name__}")
         return task
+
+
+    def init_database(self, config: dict) -> None:
+        pass
 
 
     @property
