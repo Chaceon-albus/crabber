@@ -166,13 +166,13 @@ class Crabber:
     def _get_live_status_handler(self) -> Callable[[dict], asyncio._CoroutineLike]:
 
         async def handler(event: dict) -> None:
+
+            if (room_real_id:=event.get("room_real_id", -1)) != self.room_id:
+                self.logger.debug(f"ignoring live status related event: {room_real_id} != {self.room_id}\n{jsonify(event)}")
+                return
+
             data = event.get("data", {})
             cmd = data.get("cmd", "")
-            event_room_id = data.get("roomid", -1)
-
-            if event_room_id != self.room_id:
-                self.logger.debug(f"ignoring live status related event: {event_room_id} != {self.room_id}\n{jsonify(event)}")
-                return
 
             match cmd:
 
