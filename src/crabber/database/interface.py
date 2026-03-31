@@ -16,5 +16,8 @@ class BaseAdapter:
     async def record_danmaku(self, room_id: int, user: str, uid: int, content: str, timestamp: datetime):
         pass
 
-    async def record_stats(self, room_id: int, title: str, area: str, cover_url: str, start_time: datetime, end_time: datetime, gift_revenue: float, guard_revenue: float, sc_revenue: float, summary: str, details: Dict[str, Any]):
+    async def record_stats(self, room_id: int, title: str, area: str, cover_url: str, start_time: datetime, end_time: datetime, offline_gift_revenue: float, offline_guard_revenue: float, offline_sc_revenue: float, gift_revenue: float, guard_revenue: float, sc_revenue: float, summary: str, details: Dict[str, Any]):
+        pass
+
+    async def update_stats(self, room_id: int, start_time: datetime, end_time: datetime, gift_revenue: float, guard_revenue: float, sc_revenue: float, summary: str, details: Dict[str, Any]):
         pass

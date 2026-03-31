@@ -1,4 +1,5 @@
 from typing import Callable, Awaitable
+from datetime import datetime
 
 from crabber.crabber import Crabber
 from crabber.misc import jsonify
@@ -16,8 +17,19 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
         if len(info) > 2 and len(info[2]) > 1:
             msg = info[1]
+            uid = info[2][0]
             usr = info[2][1]
-            logger.info(f"{usr}说: {msg}")
+            logger.debug(f"{usr}说: {msg}")
+
+            if ctx.db:
+                await ctx.db.record_danmaku(
+                    room_id=ctx.room_id,
+                    user=usr,
+                    uid=uid,
+                    content=msg,
+                    timestamp=datetime.now()
+                )
+
         else:
             logger.debug(f"unknown DANMU_MSG event:\n{jsonify(event)}")
 

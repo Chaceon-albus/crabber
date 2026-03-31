@@ -52,12 +52,22 @@ class SqliteAdapter(BaseAdapter):
                 room_id=room_id, user=user, uid=uid, content=content, timestamp=int(timestamp.timestamp())
             )
 
-    async def record_stats(self, room_id: int, title: str, area: str, cover_url: str, start_time: datetime, end_time: datetime, gift_revenue: float, guard_revenue: float, sc_revenue: float, summary: str, details: Dict[str, Any]):
+    async def record_stats(self, room_id: int, title: str, area: str, cover_url: str, start_time: datetime, end_time: datetime, offline_gift_revenue: float, offline_guard_revenue: float, offline_sc_revenue: float, gift_revenue: float, guard_revenue: float, sc_revenue: float, summary: str, details: Dict[str, Any]):
         await self._ensure_init()
         async with self._write_lock:
             await LiveRecord.create(
                 room_id=room_id, title=title, area=area, cover_url=cover_url,
                 start_time=int(start_time.timestamp()), end_time=int(end_time.timestamp()),
+                offline_gift_revenue=offline_gift_revenue, offline_guard_revenue=offline_guard_revenue, offline_sc_revenue=offline_sc_revenue,
+                gift_revenue=gift_revenue, guard_revenue=guard_revenue, sc_revenue=sc_revenue,
+                summary=summary, details=details
+            )
+
+    async def update_stats(self, room_id: int, start_time: datetime, end_time: datetime, gift_revenue: float, guard_revenue: float, sc_revenue: float, summary: str, details: Dict[str, Any]):
+        await self._ensure_init()
+        async with self._write_lock:
+            await LiveRecord.filter(room_id=room_id, start_time=int(start_time.timestamp())).update(
+                end_time=int(end_time.timestamp()),
                 gift_revenue=gift_revenue, guard_revenue=guard_revenue, sc_revenue=sc_revenue,
                 summary=summary, details=details
             )

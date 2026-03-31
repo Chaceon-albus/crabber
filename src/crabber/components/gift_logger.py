@@ -1,6 +1,7 @@
 import asyncio
 
 from typing import Callable, Awaitable
+from datetime import datetime
 
 from crabber.crabber import Crabber
 from crabber.room_info import RoomInfo
@@ -32,6 +33,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
             case "SEND_GIFT":
                 uname = data.get("uname", "[unknown]")
+                uid = data.get("uid", -1)
                 user = data.get("sender_uinfo", {}).get("base", {}).get("name", uname)
 
                 action = data.get("action", "投喂")
@@ -45,7 +47,16 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                 gift_revenue += value_in_cny
                 logger.info(f"{user} {action}了 {gift_name}×{num}，价值￥{value_in_cny:.2f}")
 
+                if ctx.db:
+                    await ctx.db.record_gift(
+                        room_id=ctx.room_id,
+                        user=user, uid=uid,
+                        gift=gift_name, num=num, value=value_in_cny,
+                        comment="", timestamp=datetime.now(),
+                    )
+
             case "USER_TOAST_MSG":
+                uid = data.get("uid", -1)
                 num  = data.get("num", 1)
                 unit = data.get("unit", "月")
                 role = data.get("role_name", "舰长")
@@ -56,13 +67,30 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                 guard_revenue += value_in_cny
                 logger.info(f"{user} 开通了{num}个{unit}的{role}，价值￥{value_in_cny:.2f}")
 
+                if ctx.db:
+                    await ctx.db.record_gift(
+                        room_id=ctx.room_id,
+                        user=user, uid=uid,
+                        gift=role, num=num, value=value_in_cny,
+                        comment="", timestamp=datetime.now(),
+                    )
+
             case "SUPER_CHAT_MESSAGE":
+                uid = data.get("uid", -1)
                 user = data.get("user_info", {}).get("uname", "[unknown]")
                 message = data.get("message", "")
                 value_in_cny = data.get("price", 0) # CNY price
 
                 sc_revenue += value_in_cny
                 logger.info(f"{user} 发送了￥{value_in_cny:.2f}的醒目留言: {message}")
+
+                if ctx.db:
+                    await ctx.db.record_gift(
+                        room_id=ctx.room_id,
+                        user=user, uid=uid,
+                        gift="SuperChat", num=1, value=value_in_cny,
+                        comment=message, timestamp=datetime.now(),
+                    )
 
             case _:
                 logger.warning(f"received unsupported event: {cmd}")
@@ -83,6 +111,24 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
         if sum_str := summary(gift_revenue, guard_revenue, sc_revenue):
             logger.info(sum_str)
 
+        if ctx.db:
+            await ctx.db.record_stats(
+                room_id=ctx.room_id,
+                title=info.title,
+                area=info.area,
+                cover_url=info.cover,
+                start_time=info.start_time,
+                end_time=info.start_time,
+                offline_gift_revenue=gift_revenue,
+                offline_guard_revenue=guard_revenue,
+                offline_sc_revenue=sc_revenue,
+                gift_revenue=0.0,
+                guard_revenue=0.0,
+                sc_revenue=0.0,
+                summary="",
+                details={}
+            )
+
         _clear_records() # clear records after status change
 
     async def _on_room_offline(info: RoomInfo) -> None:
@@ -92,6 +138,18 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
         if sum_str := summary(gift_revenue, guard_revenue, sc_revenue):
             logger.info(sum_str)
+
+        if ctx.db:
+            await ctx.db.update_stats(
+                room_id=ctx.room_id,
+                start_time=info.start_time,
+                end_time=info.end_time,
+                gift_revenue=gift_revenue,
+                guard_revenue=guard_revenue,
+                sc_revenue=sc_revenue,
+                summary="",
+                details={}
+            )
 
         _clear_records() # clear records after status change
 
