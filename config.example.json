@@ -1,20 +1,41 @@
 {
+    "log_file": "data/crabber.log",
     "credential_refresh_interval": 3600,
     "crabbers": [
         {
             "name": "nickname",
             "room_id": 12345,
             "components": [
-                {"type": "danmu_logger"},
-                {"type": "gift_logger"},
+                {
+                    "type": "danmu_logger"
+                },
+                {
+                    "type": "gift_logger"
+                },
                 {
                     "type": "event_logger",
-                    "events": ["GUARD_BUY", "SYS_MSG"]
+                    "events": [
+                        "SPECIAL_GIFT",
+                        "SYS_MSG"
+                    ]
                 }
             ],
-            "telemetry": {
-                "enable": false
-            }
+            "database": [
+                {
+                    "adapter": "sqlite",
+                    "config": {
+                        "path": "path/to/database.sqlite"
+                    }
+                },
+                {
+                    "adapter": "cloudflare",
+                    "config": {
+                        "account_id": "your_account_id",
+                        "api_token": "your_api_token",
+                        "dataset_id": "your_dataset_id"
+                    }
+                }
+            ]
         }
     ]
 }

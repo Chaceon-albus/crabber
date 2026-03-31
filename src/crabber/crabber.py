@@ -15,12 +15,13 @@ from crabber.logging import logger
 from crabber.credential import CredentialManager
 from crabber.room_info import RoomInfo
 from crabber.misc import jsonify
+from crabber.database import Database
 
 
 class Crabber:
 
 
-    def __init__(self, name: str, room_id: int, cred_manager: CredentialManager) -> None:
+    def __init__(self, name: str, room_id: int, cred_manager: CredentialManager, database: list = []) -> None:
 
         self.logger = logger.getChild(f"({name})")
 
@@ -30,6 +31,9 @@ class Crabber:
         self.room_info = RoomInfo(id=room_id)
         self.scheduler: Optional[AsyncIOScheduler] = None
         self.cred_manager = cred_manager
+
+        self._db_config = database
+        self.db: Optional[Database] = None
 
         self.danmaku: Optional[biliapi.live.LiveDanmaku] = None
 
@@ -85,6 +89,8 @@ class Crabber:
 
 
     async def _bootstrap(self) -> None:
+
+        self.db = Database(self._db_config, self.logger)
 
         self.scheduler = AsyncIOScheduler()
         self.scheduler.start()
@@ -249,10 +255,6 @@ class Crabber:
 
         self.logger.debug(f"added task {coro.__name__}")
         return task
-
-
-    def init_database(self, config: dict) -> None:
-        pass
 
 
     @property
