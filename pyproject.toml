@@ -10,6 +10,7 @@ requires-python = ">=3.14"
 dependencies = [
     "aiohttp>=3.13.3",
     "bilibili-api-python>=17.4.1",
+    "cloudflare>=4.3.1",
     "tortoise-orm>=1.1.7",
 ]
 
