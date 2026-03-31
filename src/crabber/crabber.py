@@ -208,6 +208,8 @@ class Crabber:
                 case _:
                     self.logger.debug(f"received unhandled live status related event:\n{jsonify(event)}")
 
+        handler.__name__ = "crabber._live_status_handler"
+
         return handler
 
 

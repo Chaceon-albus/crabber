@@ -1,10 +1,13 @@
 import asyncio
 import json
 import logging
+import warnings
 
 from datetime import datetime
 from typing import Optional, Dict, Any
 
+# Suppress Pydantic V1 compatibility warning from cloudflare SDK
+warnings.filterwarnings("ignore", message=".*Core Pydantic V1 functionality.*")
 from cloudflare import AsyncCloudflare
 
 from crabber.database.interface import BaseAdapter
