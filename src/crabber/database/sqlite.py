@@ -29,8 +29,9 @@ class SqliteAdapter(BaseAdapter):
             if not Tortoise._inited:
                 self.logger.debug(f"initializing tortoise with {self.path}")
                 await Tortoise.init(
-                    db_url=f'sqlite://{self.path}',
-                    modules={'models': ['crabber.database.records']}
+                    db_url=f"sqlite://{self.path}",
+                    modules={"models": ["crabber.database.records"]},
+                    _enable_global_fallback=True, # share global context
                 )
                 await Tortoise.generate_schemas(safe=True)
             else:
