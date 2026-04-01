@@ -203,6 +203,7 @@ class Crabber:
                     self.room_info.is_online = False
 
                 case "ROOM_CHANGE":
+                    data = data.get("data", {}) # extra layer for ROOM_CHANGE event
                     self.logger.debug(f"received ROOM_CHANGE event with data: {data}")
                     self.room_info.area = data.get("area_name", self.room_info.area)
                     self.room_info.title = data.get("title", self.room_info.title)
