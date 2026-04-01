@@ -12,7 +12,7 @@ class GiftRecord(models.Model):
     comment = fields.CharField(max_length=1024, default="")
     timestamp = fields.IntField()
 
-    class Meta:
+    class Meta(models.Model.Meta):
         table = "gift_record"
 
 
@@ -24,7 +24,7 @@ class DanmakuRecord(models.Model):
     content = fields.CharField(max_length=1024)
     timestamp = fields.IntField()
 
-    class Meta:
+    class Meta(models.Model.Meta):
         table = "danmaku_record"
 
 
@@ -45,5 +45,5 @@ class LiveRecord(models.Model):
     summary = fields.TextField(default="")
     details = fields.JSONField(default={})
 
-    class Meta:
+    class Meta(models.Model.Meta):
         table = "live_record"

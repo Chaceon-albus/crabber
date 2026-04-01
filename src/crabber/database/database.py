@@ -12,8 +12,11 @@ from crabber.database.cloudflare import CloudflareD1Adapter
 class Database(BaseAdapter):
 
     def __init__(self, adapters_config: List[dict], logger: logging.Logger):
-        super().__init__(adapters_config, logger)
+        super().__init__()
+
+        self.logger = logger
         self.adapters: List[BaseAdapter] = []
+
         for ac in adapters_config:
             adapter_type = ac.get("adapter")
             config = ac.get("config", {})
@@ -50,7 +53,7 @@ class Database(BaseAdapter):
 
     async def record_stats(self, room_id: int, title: str, area: str, cover_url: str, start_time: datetime, end_time: datetime, offline_gift_revenue: float, offline_guard_revenue: float, offline_sc_revenue: float, gift_revenue: float, guard_revenue: float, sc_revenue: float, summary: str, details: Dict[str, Any]):
         tasks = [
-            adapter.record_stats(room_id, title, area, cover_url, start_time, end_time, offline_gift_revenue, offline_guard_revenue, offline_sc_revenue, gift_revenue, guard_revenue, sc_revenue, summary, details) 
+            adapter.record_stats(room_id, title, area, cover_url, start_time, end_time, offline_gift_revenue, offline_guard_revenue, offline_sc_revenue, gift_revenue, guard_revenue, sc_revenue, summary, details)
             for adapter in self.adapters
         ]
         if tasks:
@@ -59,7 +62,7 @@ class Database(BaseAdapter):
 
     async def update_stats(self, room_id: int, start_time: datetime, end_time: datetime, gift_revenue: float, guard_revenue: float, sc_revenue: float, summary: str, details: Dict[str, Any]):
         tasks = [
-            adapter.update_stats(room_id, start_time, end_time, gift_revenue, guard_revenue, sc_revenue, summary, details) 
+            adapter.update_stats(room_id, start_time, end_time, gift_revenue, guard_revenue, sc_revenue, summary, details)
             for adapter in self.adapters
         ]
         if tasks:

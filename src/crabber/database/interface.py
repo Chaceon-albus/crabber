@@ -1,14 +1,11 @@
-import logging
-
 from datetime import datetime
 from typing import Optional, Dict, Any
 
 
 class BaseAdapter:
 
-    def __init__(self, config: dict, logger: logging.Logger):
-        self.logger = logger
-        self.config = config
+    def __init__(self):
+        pass
 
     async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, value: float, comment: Optional[str], timestamp: datetime):
         pass

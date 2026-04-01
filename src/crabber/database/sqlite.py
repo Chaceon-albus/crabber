@@ -13,7 +13,8 @@ from crabber.database.records import GiftRecord, DanmakuRecord, LiveRecord
 class SqliteAdapter(BaseAdapter):
 
     def __init__(self, config: dict, logger: logging.Logger):
-        super().__init__(config, logger)
+        super().__init__()
+        self.logger = logger
         self.path = config.get("path", "crabberDB.sqlite")
         self._write_lock = asyncio.Lock()
         self._initialized = False

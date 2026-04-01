@@ -16,10 +16,16 @@ from crabber.database.interface import BaseAdapter
 class CloudflareD1Adapter(BaseAdapter):
 
     def __init__(self, config: dict, logger: logging.Logger):
-        super().__init__(config, logger)
-        self.account_id = config.get("account_id")
-        self.api_token = config.get("api_token")
-        self.dataset_id = config.get("dataset_id")
+        super().__init__()
+
+        self.logger = logger
+
+        self.account_id = config.get("account_id", "")
+        self.api_token  = config.get("api_token", "")
+        self.dataset_id = config.get("dataset_id", "")
+
+        if not all([self.account_id, self.api_token, self.dataset_id]):
+            raise ValueError("Cloudflare D1 configuration is incomplete. Please provide account_id, api_token, and dataset_id.")
 
         # Initialize the official async cloudflare client
         self.client = AsyncCloudflare(api_token=self.api_token)
@@ -46,7 +52,7 @@ class CloudflareD1Adapter(BaseAdapter):
         details_str = json.dumps(details)
         sql = """
             INSERT INTO live_record
-            (room_id, title, area, cover_url, start_time, end_time, offline_gift_revenue, offline_guard_revenue, offline_sc_revenue, gift_revenue, guard_revenue, sc_revenue, summary, details) 
+            (room_id, title, area, cover_url, start_time, end_time, offline_gift_revenue, offline_guard_revenue, offline_sc_revenue, gift_revenue, guard_revenue, sc_revenue, summary, details)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         params = [room_id, title, area, cover_url, int(start_time.timestamp()), int(end_time.timestamp()), offline_gift_revenue, offline_guard_revenue, offline_sc_revenue, gift_revenue, guard_revenue, sc_revenue, summary, details_str]
