@@ -11,7 +11,6 @@ def coin_to_cny(coin: int|float, rate: float = 0.001) -> float:
     return coin * rate
 
 
-
 def format_timedelta(td: timedelta) -> str:
 
     days = td.days
@@ -28,6 +27,10 @@ def format_timedelta(td: timedelta) -> str:
         parts.append(f"{minutes}分")
 
     return "".join(parts) if parts else "少于1分钟"
+
+
+def saft_ts(ts: float | int) -> float:
+    return ts if ts < 100_000_000_000 else ts / 1000
 
 
 if __name__ == "__main__":

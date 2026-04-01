@@ -14,7 +14,7 @@ from bilibili_api.live import LiveRoom, LiveDanmaku
 from crabber.logging import logger
 from crabber.credential import CredentialManager
 from crabber.room_info import RoomInfo
-from crabber.misc import jsonify
+from crabber.misc import jsonify, saft_ts
 from crabber.database import Database
 
 
@@ -197,8 +197,10 @@ class Crabber:
 
                 case "PREPARING":
                     self.logger.debug(f"received PREPARING event with data: {data}")
+                    self.room_info.end_time = datetime.fromtimestamp(
+                        saft_ts(data.get("send_time", 1000*datetime.now().timestamp()))
+                    )
                     self.room_info.is_online = False
-                    self.room_info.end_time = datetime.fromtimestamp(data.get("send_time", datetime.now().timestamp()))
 
                 case "ROOM_CHANGE":
                     self.logger.debug(f"received ROOM_CHANGE event with data: {data}")
