@@ -4,6 +4,7 @@ import logging
 import warnings
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional, Dict, Any
 
 # Suppress Pydantic V1 compatibility warning from cloudflare SDK
@@ -31,7 +32,7 @@ class CloudflareD1Adapter(BaseAdapter):
         self.client = AsyncCloudflare(api_token=self.api_token)
         self._write_lock = asyncio.Lock()
 
-    async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, value: float, comment: Optional[str], timestamp: datetime):
+    async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, value: Decimal, comment: Optional[str], timestamp: datetime):
         pass  # As requested, skip saving detailed gift records to D1
 
     async def record_danmaku(self, room_id: int, user: str, uid: int, content: str, timestamp: datetime):
@@ -48,26 +49,26 @@ class CloudflareD1Adapter(BaseAdapter):
         except Exception as e:
             self.logger.error(f"Failed to execute D1 SQL: {e}")
 
-    async def record_stats(self, room_id: int, title: str, area: str, cover_url: str, start_time: datetime, end_time: datetime, offline_gift_revenue: float, offline_guard_revenue: float, offline_sc_revenue: float, gift_revenue: float, guard_revenue: float, sc_revenue: float, summary: str, details: Dict[str, Any]):
+    async def record_stats(self, room_id: int, title: str, area: str, cover_url: str, start_time: datetime, end_time: datetime, offline_gift_revenue: Decimal, offline_guard_revenue: Decimal, offline_sc_revenue: Decimal, gift_revenue: Decimal, guard_revenue: Decimal, sc_revenue: Decimal, summary: str, details: Dict[str, Any]):
         details_str = json.dumps(details)
         sql = """
             INSERT INTO live_record
             (room_id, title, area, cover_url, start_time, end_time, offline_gift_revenue, offline_guard_revenue, offline_sc_revenue, gift_revenue, guard_revenue, sc_revenue, summary, details)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        params = [room_id, title, area, cover_url, int(start_time.timestamp()), int(end_time.timestamp()), offline_gift_revenue, offline_guard_revenue, offline_sc_revenue, gift_revenue, guard_revenue, sc_revenue, summary, details_str]
+        params = [room_id, title, area, cover_url, int(start_time.timestamp()), int(end_time.timestamp()), float(offline_gift_revenue), float(offline_guard_revenue), float(offline_sc_revenue), float(gift_revenue), float(guard_revenue), float(sc_revenue), summary, details_str]
 
         async with self._write_lock:
             await self._execute_sql(sql, params)
 
-    async def update_stats(self, room_id: int, start_time: datetime, end_time: datetime, gift_revenue: float, guard_revenue: float, sc_revenue: float, summary: str, details: Dict[str, Any]):
+    async def update_stats(self, room_id: int, start_time: datetime, end_time: datetime, gift_revenue: Decimal, guard_revenue: Decimal, sc_revenue: Decimal, summary: str, details: Dict[str, Any]):
         details_str = json.dumps(details)
         sql = """
             UPDATE live_record
             SET end_time=?, gift_revenue=?, guard_revenue=?, sc_revenue=?, summary=?, details=?
             WHERE room_id=? AND start_time=?
         """
-        params = [int(end_time.timestamp()), gift_revenue, guard_revenue, sc_revenue, summary, details_str, room_id, int(start_time.timestamp())]
+        params = [int(end_time.timestamp()), float(gift_revenue), float(guard_revenue), float(sc_revenue), summary, details_str, room_id, int(start_time.timestamp())]
 
         async with self._write_lock:
             await self._execute_sql(sql, params)

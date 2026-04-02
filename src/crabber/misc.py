@@ -1,14 +1,15 @@
 import json
 
 from datetime import timedelta
+from decimal import Decimal
 
 
 def jsonify(obj: dict) -> str:
     return json.dumps(obj, indent=2, ensure_ascii=False)
 
 
-def coin_to_cny(coin: int|float, rate: float = 0.001) -> float:
-    return coin * rate
+def coin_to_cny(coin: int|float|Decimal, rate: float = 0.001) -> Decimal:
+    return Decimal(str(coin)) * Decimal(str(rate))
 
 
 def format_timedelta(td: timedelta) -> str:

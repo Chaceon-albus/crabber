@@ -2,6 +2,7 @@ import asyncio
 
 from typing import Callable, Awaitable
 from datetime import datetime
+from decimal import Decimal
 
 from crabber.crabber import Crabber
 from crabber.room_info import RoomInfo
@@ -17,15 +18,15 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
     is_online = False
 
-    gift_revenue = 0.0
-    guard_revenue = 0.0
-    sc_revenue = 0.0
+    gift_revenue = Decimal(0)
+    guard_revenue = Decimal(0)
+    sc_revenue = Decimal(0)
 
 
     async def handler(event: dict) -> None:
         cmd = event.get("data", {}).get("cmd", "unknown")
         data = event.get("data", {}).get("data", {})
-        value_in_cny = 0.0
+        value_in_cny = Decimal(0)
 
         nonlocal gift_revenue, guard_revenue, sc_revenue
 
@@ -98,9 +99,9 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
     def _clear_records() -> None:
         nonlocal gift_revenue, guard_revenue, sc_revenue
-        gift_revenue = 0.0
-        guard_revenue = 0.0
-        sc_revenue = 0.0
+        gift_revenue = Decimal(0)
+        guard_revenue = Decimal(0)
+        sc_revenue = Decimal(0)
 
 
     async def _on_room_online(info: RoomInfo) -> None:
@@ -122,9 +123,9 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                 offline_gift_revenue=gift_revenue,
                 offline_guard_revenue=guard_revenue,
                 offline_sc_revenue=sc_revenue,
-                gift_revenue=0.0,
-                guard_revenue=0.0,
-                sc_revenue=0.0,
+                gift_revenue=Decimal(0),
+                guard_revenue=Decimal(0),
+                sc_revenue=Decimal(0),
                 summary="",
                 details={}
             )
@@ -191,5 +192,5 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
     return handler
 
 
-def summary(gift: float, guard: float, sc: float) -> str:
+def summary(gift: Decimal, guard: Decimal, sc: Decimal) -> str:
     return f"收到礼物￥{gift:.2f}，大航海￥{guard:.2f}，SC￥{sc:.2f}，共￥{gift + guard + sc:.2f}" if gift + guard + sc > 0 else ""

@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional, Dict, Any
 
 from tortoise import Tortoise
@@ -40,7 +41,7 @@ class SqliteAdapter(BaseAdapter):
 
             self._initialized = True
 
-    async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, value: float, comment: Optional[str], timestamp: datetime):
+    async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, value: Decimal, comment: Optional[str], timestamp: datetime):
         await self._ensure_init()
         async with self._write_lock:
             await GiftRecord.create(
@@ -54,7 +55,7 @@ class SqliteAdapter(BaseAdapter):
                 room_id=room_id, user=user, uid=uid, content=content, timestamp=int(timestamp.timestamp())
             )
 
-    async def record_stats(self, room_id: int, title: str, area: str, cover_url: str, start_time: datetime, end_time: datetime, offline_gift_revenue: float, offline_guard_revenue: float, offline_sc_revenue: float, gift_revenue: float, guard_revenue: float, sc_revenue: float, summary: str, details: Dict[str, Any]):
+    async def record_stats(self, room_id: int, title: str, area: str, cover_url: str, start_time: datetime, end_time: datetime, offline_gift_revenue: Decimal, offline_guard_revenue: Decimal, offline_sc_revenue: Decimal, gift_revenue: Decimal, guard_revenue: Decimal, sc_revenue: Decimal, summary: str, details: Dict[str, Any]):
         await self._ensure_init()
         async with self._write_lock:
             await LiveRecord.create(
@@ -65,7 +66,7 @@ class SqliteAdapter(BaseAdapter):
                 summary=summary, details=details
             )
 
-    async def update_stats(self, room_id: int, start_time: datetime, end_time: datetime, gift_revenue: float, guard_revenue: float, sc_revenue: float, summary: str, details: Dict[str, Any]):
+    async def update_stats(self, room_id: int, start_time: datetime, end_time: datetime, gift_revenue: Decimal, guard_revenue: Decimal, sc_revenue: Decimal, summary: str, details: Dict[str, Any]):
         await self._ensure_init()
         async with self._write_lock:
             await LiveRecord.filter(room_id=room_id, start_time=int(start_time.timestamp())).update(
