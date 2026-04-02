@@ -41,11 +41,11 @@ class SqliteAdapter(BaseAdapter):
 
             self._initialized = True
 
-    async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, value: Decimal, comment: Optional[str], timestamp: datetime):
+    async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, total_value: Decimal, comment: Optional[str], timestamp: datetime):
         await self._ensure_init()
         async with self._write_lock:
             await GiftRecord.create(
-                room_id=room_id, user=user, uid=uid, gift=gift, num=num, value=value, comment=comment, timestamp=int(timestamp.timestamp())
+                room_id=room_id, user=user, uid=uid, gift=gift, num=num, total_value=total_value, comment=comment, timestamp=int(timestamp.timestamp())
             )
 
     async def record_danmaku(self, room_id: int, user: str, uid: int, content: str, timestamp: datetime):

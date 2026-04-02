@@ -8,7 +8,7 @@ class BaseAdapter:
     def __init__(self):
         pass
 
-    async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, value: Decimal, comment: Optional[str], timestamp: datetime):
+    async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, total_value: Decimal, comment: Optional[str], timestamp: datetime):
         pass
 
     async def record_danmaku(self, room_id: int, user: str, uid: int, content: str, timestamp: datetime):

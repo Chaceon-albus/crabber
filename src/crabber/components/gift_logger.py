@@ -52,7 +52,8 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                     await ctx.db.record_gift(
                         room_id=ctx.room_id,
                         user=user, uid=uid,
-                        gift=gift_name, num=num, value=value_in_cny,
+                        gift=gift_name, num=num,
+                        total_value=value_in_cny,
                         comment="", timestamp=datetime.now(),
                     )
 
@@ -72,7 +73,8 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                     await ctx.db.record_gift(
                         room_id=ctx.room_id,
                         user=user, uid=uid,
-                        gift=role, num=num, value=value_in_cny,
+                        gift=role, num=num,
+                        total_value=value_in_cny,
                         comment="", timestamp=datetime.now(),
                     )
 
@@ -89,7 +91,8 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                     await ctx.db.record_gift(
                         room_id=ctx.room_id,
                         user=user, uid=uid,
-                        gift="SuperChat", num=1, value=value_in_cny,
+                        gift="SuperChat", num=1,
+                        total_value=value_in_cny,
                         comment=message, timestamp=datetime.now(),
                     )
 

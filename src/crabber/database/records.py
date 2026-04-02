@@ -8,7 +8,7 @@ class GiftRecord(models.Model):
     uid = fields.IntField(default=-1)
     gift = fields.CharField(max_length=255)
     num = fields.IntField()
-    value = fields.DecimalField(max_digits=12, decimal_places=2)
+    total_value = fields.DecimalField(max_digits=12, decimal_places=2)
     comment = fields.CharField(max_length=1024, default="")
     timestamp = fields.IntField()
 
