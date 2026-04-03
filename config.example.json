@@ -18,6 +18,24 @@
                         "SPECIAL_GIFT",
                         "SYS_MSG"
                     ]
+                },
+                {
+                    "type": "notify",
+                    "config": {
+                        "channels": [
+                            {
+                                "name": "ntfy_channel",
+                                "provider": "ntfy",
+                                "enabled": true,
+                                "config": {
+                                    "endpoint": "https://ntfy.sh/",
+                                    "topic": "my_topic",
+                                    "priority": 3,
+                                    "token": "tk_..."
+                                }
+                            }
+                        ]
+                    }
                 }
             ],
             "database": [
