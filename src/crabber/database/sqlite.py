@@ -45,7 +45,7 @@ class SqliteAdapter(BaseAdapter):
         await self._ensure_init()
         async with self._write_lock:
             await GiftRecord.create(
-                room_id=room_id, user=user, uid=uid, gift=gift, num=num, total_value=total_value, comment=comment, timestamp=int(timestamp.timestamp())
+                room_id=room_id, user=user, uid=uid, gift=gift, num=num, total_value=total_value.quantize(Decimal("0.00")), comment=comment, timestamp=int(timestamp.timestamp())
             )
 
     async def record_danmaku(self, room_id: int, user: str, uid: int, content: str, timestamp: datetime):
@@ -61,8 +61,8 @@ class SqliteAdapter(BaseAdapter):
             await LiveRecord.create(
                 room_id=room_id, title=title, area=area, cover_url=cover_url,
                 start_time=int(start_time.timestamp()), end_time=int(end_time.timestamp()),
-                offline_gift_revenue=offline_gift_revenue, offline_guard_revenue=offline_guard_revenue, offline_sc_revenue=offline_sc_revenue,
-                gift_revenue=gift_revenue, guard_revenue=guard_revenue, sc_revenue=sc_revenue,
+                offline_gift_revenue=offline_gift_revenue.quantize(Decimal("0.00")), offline_guard_revenue=offline_guard_revenue.quantize(Decimal("0.00")), offline_sc_revenue=offline_sc_revenue.quantize(Decimal("0.00")),
+                gift_revenue=gift_revenue.quantize(Decimal("0.00")), guard_revenue=guard_revenue.quantize(Decimal("0.00")), sc_revenue=sc_revenue.quantize(Decimal("0.00")),
                 summary=summary, details=details
             )
 
@@ -71,6 +71,6 @@ class SqliteAdapter(BaseAdapter):
         async with self._write_lock:
             await LiveRecord.filter(room_id=room_id, start_time=int(start_time.timestamp())).update(
                 end_time=int(end_time.timestamp()),
-                gift_revenue=gift_revenue, guard_revenue=guard_revenue, sc_revenue=sc_revenue,
+                gift_revenue=gift_revenue.quantize(Decimal("0.00")), guard_revenue=guard_revenue.quantize(Decimal("0.00")), sc_revenue=sc_revenue.quantize(Decimal("0.00")),
                 summary=summary, details=details
             )
