@@ -31,7 +31,10 @@
                                     "endpoint": "https://ntfy.sh/",
                                     "topic": "my_topic",
                                     "priority": 3,
-                                    "token": "tk_..."
+                                    "token": "tk_...",
+                                    "replace_host": {
+                                        "www.example.com": "www.replaced.com"
+                                    }
                                 }
                             }
                         ]

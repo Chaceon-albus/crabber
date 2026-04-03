@@ -13,6 +13,8 @@ async def send_notify(room: RoomInfo, config: dict = {}, logger: Logger = defaul
     topic = config.get("topic", "")
     token = config.get("token", "")
     priority = config.get("priority", 3)
+    replace_map = config.get("replace_host", {})
+
 
     if not endpoint:
         logger.warning(f"ntfy[{name}] endpoint not configured, skipping notify")
@@ -27,10 +29,9 @@ async def send_notify(room: RoomInfo, config: dict = {}, logger: Logger = defaul
     payload = {
         "priority": priority,
         "topic": topic,
-        "icon": "https://www.bilibili.com/favicon.ico",
         "title": f"正在直播：{room.title}",
         "message": room.area,
-        "attach": room.cover,
+        "attach": replace_host(room.cover, replace_map),
         "click": f"https://live.bilibili.com/{room.id}",
         "actions": [
             {
@@ -48,3 +49,10 @@ async def send_notify(room: RoomInfo, config: dict = {}, logger: Logger = defaul
             resp.raise_for_status()
         except Exception as e:
             logger.error(f"ntfy[{name}] failed to send notification: {e}")
+
+
+def replace_host(url: str, replace_map: dict) -> str:
+    for old_host, new_host in replace_map.items():
+        url = url.replace(old_host, new_host)
+
+    return url
