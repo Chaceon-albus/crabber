@@ -7,6 +7,7 @@ class RoomInfo:
 
     id: int
     area: str = ""
+    uname: str = ""
     title: str = ""
     cover: str = ""
     is_online: bool = False

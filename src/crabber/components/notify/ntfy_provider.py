@@ -29,7 +29,7 @@ async def send_notify(room: RoomInfo, config: dict = {}, logger: Logger = defaul
     payload = {
         "priority": priority,
         "topic": topic,
-        "title": f"正在直播：{room.title}",
+        "title": f"{room.uname}正在直播：{room.title}",
         "message": room.area,
         "attach": replace_host(room.cover, replace_map),
         "click": f"https://live.bilibili.com/{room.id}",

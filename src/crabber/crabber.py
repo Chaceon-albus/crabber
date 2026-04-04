@@ -179,6 +179,7 @@ class Crabber:
             # update some information of the crabber after danmaku is ready
             self.uid = room_info.get("uid", -1)
             self.room_info.area = room_info.get("area_name", "")
+            self.room_info.uname = room_info.get("anchor_info", {}).get("base_info", {}).get("uname", "")
             self.room_info.title = room_info.get("title", "")
             self.room_info.cover = room_info.get("cover", "")
             self.room_info.is_online = (room_info.get("live_status", 0) == 1)
@@ -193,7 +194,7 @@ class Crabber:
             self.logger.debug(f"update room info: {self.room_info}")
 
         live_status_handler = self._get_live_status_handler()
-        for event_name in ["LIVE", "PREPARING", "ROOM_CHANGE"]:
+        for event_name in ["LIVE", "PREPARING", "ROOM_CHANGE", "CHANGE_ROOM_INFO"]:
             self.add_handler(event_name, live_status_handler)
 
 
@@ -228,7 +229,6 @@ class Crabber:
 
 
     async def _on_room_online(self) -> None:
-        if self.room_info.is_online: return # repeated online event
         for callback in self.online_callbacks:
             try:
                 await callback(self.room_info)
@@ -236,7 +236,6 @@ class Crabber:
                 self.logger.exception(f"failed on online callback: {e}")
 
     async def _on_room_offline(self) -> None:
-        if not self.room_info.is_online: return # in case of repeated offline event
         for callback in self.offline_callbacks:
             try:
                 await callback(self.room_info)
@@ -261,6 +260,8 @@ class Crabber:
             data = event.get("data", {})
             cmd = data.get("cmd", "")
 
+            is_currently_online = self.room_info.is_online
+
             match cmd:
 
                 case "LIVE":
@@ -272,31 +273,33 @@ class Crabber:
                         # so it's safe to update start_time whenever it's present
                         self.room_info.start_time = datetime.fromtimestamp(data["live_time"])
 
-                        try:
-                            # force to update cover, since idk how to update it from other events
-                            room_info = (await self.room.get_room_info()).get("room_info", {}) # type: ignore
-                            self.room_info.cover = room_info.get("cover", self.room_info.cover)
-                        except Exception as e:
-                            self.logger.exception(e)
-
-                    # _on_room_online will check "is_online" to decide if it's repeated
-                    await self._on_room_online()
-                    # postpone setting status, in case the cover is not updated in time
                     self.room_info.is_online = True
+
+                    if not is_currently_online: # offline -> online
+                        await self._on_room_online()
 
                 case "PREPARING":
                     self.logger.debug(f"received PREPARING event with data: {data}")
+
                     self.room_info.end_time = datetime.fromtimestamp(
                         saft_ts(data.get("send_time", 1000*datetime.now().timestamp()))
                     )
-                    await self._on_room_offline()
                     self.room_info.is_online = False
+
+                    if is_currently_online: # online -> offline
+                        await self._on_room_offline()
 
                 case "ROOM_CHANGE":
                     data = data.get("data", {}) # extra layer for ROOM_CHANGE event
                     self.logger.debug(f"received ROOM_CHANGE event with data: {data}")
                     self.room_info.area = data.get("area_name", self.room_info.area)
                     self.room_info.title = data.get("title", self.room_info.title)
+                    await self._on_room_change()
+
+                case "CHANGE_ROOM_INFO":
+                    # relatively rare event, may be received when the streamer changes the cover
+                    self.logger.info(f"received CHANGE_ROOM_INFO event with data: {data}")
+                    self.room_info.cover = data.get("background", self.room_info.cover)
                     await self._on_room_change()
 
                 case _:
