@@ -174,12 +174,14 @@ class Crabber:
             await asyncio.sleep(1)
 
         try:
-            room_info = (await self.room.get_room_info()).get("room_info", {}) # type: ignore
+            room_info   = await self.room.get_room_info() # type: ignore
+            anchor_info = room_info.get("anchor_info", {})
+            room_info   = room_info.get("room_info", {})
 
             # update some information of the crabber after danmaku is ready
             self.uid = room_info.get("uid", -1)
             self.room_info.area = room_info.get("area_name", "")
-            self.room_info.uname = room_info.get("anchor_info", {}).get("base_info", {}).get("uname", "")
+            self.room_info.uname = anchor_info.get("base_info", {}).get("uname", "")
             self.room_info.title = room_info.get("title", "")
             self.room_info.cover = room_info.get("cover", "")
             self.room_info.is_online = (room_info.get("live_status", 0) == 1)
