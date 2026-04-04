@@ -172,6 +172,9 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
             raise
 
 
+    _on_room_online.__name__ = "[gift_logger]_online"
+    _on_room_offline.__name__ = "[gift_logger]_offline"
+
     ctx.add_task(_watch_gift_logger_cancel())
     ctx.add_online_callback(_on_room_online)
     ctx.add_offline_callback(_on_room_offline)

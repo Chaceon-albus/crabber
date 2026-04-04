@@ -32,6 +32,7 @@ def get_handler(ctx: Crabber, channels: list[dict], *args, **kwargs) -> Callable
                 logger.exception(f"channel {channel.get('name', '[notset]')} failed: {e}")
 
 
+    _on_room_online.__name__ = "[notify]_online"
     ctx.add_online_callback(_on_room_online)
 
 
