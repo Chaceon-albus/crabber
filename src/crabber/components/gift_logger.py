@@ -157,39 +157,24 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
         _clear_records() # clear records after status change
 
+
     async def _on_task_cancel(info: RoomInfo) -> None:
         if sum_str := summary(gift_revenue, guard_revenue, sc_revenue):
             logger.info(f"未提交的记录：{sum_str}, start={info.start_time}, end={info.end_time}")
 
 
-    async def _watch_live_status() -> None:
+    async def _watch_gift_logger_cancel() -> None:
         try:
-
-            while True:
-
-                try:
-                    nonlocal is_online
-                    if ctx.room_info.is_online != is_online:
-
-                        is_online = ctx.room_info.is_online
-
-                        if is_online:
-                            await _on_room_online(ctx.room_info)
-                        else:
-                            await _on_room_offline(ctx.room_info)
-
-                except Exception as e:
-                    logger.exception(e)
-
-                await asyncio.sleep(1)
-
+            await asyncio.Future() # wait until cancelled
         except asyncio.CancelledError:
             logger.debug(f"received cancel signal")
             await _on_task_cancel(ctx.room_info)
             raise
 
 
-    ctx.add_task(_watch_live_status())
+    ctx.add_task(_watch_gift_logger_cancel())
+    ctx.add_online_callback(_on_room_online)
+    ctx.add_offline_callback(_on_room_offline)
 
 
     return handler

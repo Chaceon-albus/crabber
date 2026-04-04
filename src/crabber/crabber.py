@@ -42,6 +42,9 @@ class Crabber:
 
         self.jobs: list[Job] = []
         self.tasks: list[asyncio.Task] = []
+        self.online_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
+        self.offline_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
+        self.room_change_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
 
         self._is_ready = threading.Event()
 
@@ -53,6 +56,67 @@ class Crabber:
         self.thread.start()
 
         self._is_ready.wait() # wait until the thread is ready
+
+
+    def add_handler(self, event_name: str, handler: Callable):
+
+        if self.loop is None or not self.loop.is_running():
+            raise RuntimeError(f"crabber is not ready to add handler")
+
+        def _register():
+            if self.danmaku:
+                self.danmaku.add_event_listener(event_name, handler)
+            else:
+                self.logger.error(f"failed to register handler: danmaku is not initialized")
+
+        self.loop.call_soon_threadsafe(_register)
+        self.logger.debug(f"registered {handler.__name__} for {event_name}")
+
+
+    def add_job(self, func, trigger: str = "interval", *args, **kwargs) -> Job:
+        if self.loop is None or not self.loop.is_running() or self.scheduler is None:
+            raise RuntimeError("crabber is not ready to add job")
+
+        def thread_safe_wrapper(*wrapper_args, **inner_kwargs):
+            asyncio.run_coroutine_threadsafe(func(*wrapper_args, **inner_kwargs), self.loop) # type: ignore
+
+        job = self.scheduler.add_job(
+            thread_safe_wrapper,
+            trigger,
+            args=args,
+            **kwargs
+        )
+
+        self.jobs.append(job)
+
+        self.logger.debug(f"added job {func.__name__} with trigger '{trigger}' and args {kwargs}")
+        return job
+
+
+    def add_task(self, coro: asyncio._CoroutineLike, *args, **kwargs) -> asyncio.Task:
+        if self.loop is None or not self.loop.is_running():
+            raise RuntimeError("crabber is not ready to add task")
+
+        task = self.loop.create_task(coro, *args, **kwargs)
+        self.tasks.append(task)
+
+        self.logger.debug(f"added task {coro.__name__}")
+        return task
+
+
+    def add_online_callback(self, callback: Callable[[RoomInfo], asyncio._CoroutineLike]) -> None:
+        self.online_callbacks.append(callback)
+        self.logger.debug(f"added online callback: {callback.__name__}")
+
+
+    def add_offline_callback(self, callback: Callable[[RoomInfo], asyncio._CoroutineLike]) -> None:
+        self.offline_callbacks.append(callback)
+        self.logger.debug(f"added offline callback: {callback.__name__}")
+
+
+    def add_room_change_callback(self, callback: Callable[[RoomInfo], asyncio._CoroutineLike]) -> None:
+        self.room_change_callbacks.append(callback)
+        self.logger.debug(f"added room change callback: {callback.__name__}")
 
 
     def _thread_entry(self) -> None:
@@ -163,6 +227,29 @@ class Crabber:
                 self.logger.exception(f"error occurred while handling credential update: {e}")
 
 
+    async def _on_room_online(self) -> None:
+        if self.room_info.is_online: return # repeated online event
+        for callback in self.online_callbacks:
+            try:
+                await callback(self.room_info)
+            except Exception as e:
+                self.logger.exception(f"failed on online callback: {e}")
+
+    async def _on_room_offline(self) -> None:
+        if not self.room_info.is_online: return # in case of repeated offline event
+        for callback in self.offline_callbacks:
+            try:
+                await callback(self.room_info)
+            except Exception as e:
+                self.logger.exception(f"failed on offline callback: {e}")
+
+    async def _on_room_change(self) -> None:
+        for callback in self.room_change_callbacks:
+            try:
+                await callback(self.room_info)
+            except Exception as e:
+                self.logger.exception(f"failed on room change callback: {e}")
+
     def _get_live_status_handler(self) -> Callable[[dict], asyncio._CoroutineLike]:
 
         async def handler(event: dict) -> None:
@@ -192,6 +279,8 @@ class Crabber:
                         except Exception as e:
                             self.logger.exception(e)
 
+                    # _on_room_online will check "is_online" to decide if it's repeated
+                    await self._on_room_online()
                     # postpone setting status, in case the cover is not updated in time
                     self.room_info.is_online = True
 
@@ -200,6 +289,7 @@ class Crabber:
                     self.room_info.end_time = datetime.fromtimestamp(
                         saft_ts(data.get("send_time", 1000*datetime.now().timestamp()))
                     )
+                    await self._on_room_offline()
                     self.room_info.is_online = False
 
                 case "ROOM_CHANGE":
@@ -207,6 +297,7 @@ class Crabber:
                     self.logger.debug(f"received ROOM_CHANGE event with data: {data}")
                     self.room_info.area = data.get("area_name", self.room_info.area)
                     self.room_info.title = data.get("title", self.room_info.title)
+                    await self._on_room_change()
 
                 case _:
                     self.logger.debug(f"received unhandled live status related event:\n{jsonify(event)}")
@@ -214,52 +305,6 @@ class Crabber:
         handler.__name__ = "crabber._live_status_handler"
 
         return handler
-
-
-    def add_handler(self, event_name: str, handler: Callable):
-
-        if self.loop is None or not self.loop.is_running():
-            raise RuntimeError(f"crabber is not ready to add handler")
-
-        def _register():
-            if self.danmaku:
-                self.danmaku.add_event_listener(event_name, handler)
-            else:
-                self.logger.error(f"failed to register handler: danmaku is not initialized")
-
-        self.loop.call_soon_threadsafe(_register)
-        self.logger.debug(f"registered {handler.__name__} for {event_name}")
-
-
-    def add_job(self, func, trigger: str = "interval", *args, **kwargs) -> Job:
-        if self.loop is None or not self.loop.is_running() or self.scheduler is None:
-            raise RuntimeError("crabber is not ready to add job")
-
-        def thread_safe_wrapper(*wrapper_args, **inner_kwargs):
-            asyncio.run_coroutine_threadsafe(func(*wrapper_args, **inner_kwargs), self.loop) # type: ignore
-
-        job = self.scheduler.add_job(
-            thread_safe_wrapper,
-            trigger,
-            args=args,
-            **kwargs
-        )
-
-        self.jobs.append(job)
-
-        self.logger.debug(f"added job {func.__name__} with trigger '{trigger}' and args {kwargs}")
-        return job
-
-
-    def add_task(self, coro: asyncio._CoroutineLike, *args, **kwargs) -> asyncio.Task:
-        if self.loop is None or not self.loop.is_running():
-            raise RuntimeError("crabber is not ready to add task")
-
-        task = self.loop.create_task(coro, *args, **kwargs)
-        self.tasks.append(task)
-
-        self.logger.debug(f"added task {coro.__name__}")
-        return task
 
 
     @property
