@@ -82,7 +82,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                 uid = data.get("uid", -1)
                 user = data.get("user_info", {}).get("uname", "[unknown]")
                 message = data.get("message", "")
-                value_in_cny = data.get("price", 0) # CNY price
+                value_in_cny = Decimal(f"{float(data.get("price", 0)):.2f}") # CNY price
 
                 sc_revenue += value_in_cny
                 logger.info(f"{user} 发送了￥{value_in_cny:.2f}的醒目留言: {message}")
