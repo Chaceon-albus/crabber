@@ -33,10 +33,27 @@ class CloudflareD1Adapter(BaseAdapter):
         self._write_lock = asyncio.Lock()
 
     async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, total_value: Decimal, comment: Optional[str], timestamp: datetime):
-        pass  # As requested, skip saving detailed gift records to D1
+        comment_val = comment if comment is not None else ""
+        sql = """
+            INSERT INTO gift_record
+            (room_id, user, uid, gift, num, total_value, comment, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        params = [room_id, user, uid, gift, num, f"{total_value:.2f}", comment_val, int(timestamp.timestamp())]
+
+        async with self._write_lock:
+            await self._execute_sql(sql, params)
 
     async def record_danmaku(self, room_id: int, user: str, uid: int, content: str, timestamp: datetime):
-        pass  # As requested, skip saving detailed danmaku records to D1
+        sql = """
+            INSERT INTO danmaku_record
+            (room_id, user, uid, content, timestamp)
+            VALUES (?, ?, ?, ?, ?)
+        """
+        params = [room_id, user, uid, content, int(timestamp.timestamp())]
+
+        async with self._write_lock:
+            await self._execute_sql(sql, params)
 
     async def _execute_sql(self, sql: str, params: list):
         try:
