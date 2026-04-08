@@ -62,6 +62,7 @@ class CredentialManager:
                 for k, v in list(cookies.items()):
                     if not v: cookies.pop(k)
 
+                # cred_file contains credentials only, no need to read it before writing
                 with open(self.cred_file, mode="w", encoding="utf-8") as f:
                     json.dump(cookies, f, indent=4, sort_keys=False, ensure_ascii=False)
             except Exception as e:
@@ -71,13 +72,12 @@ class CredentialManager:
 
             # notify all crabbers
             with self._lock:
-                name = "unknown"
-                try:
-                    for name, (loop, event) in self.crabbers.items():
+                for name, (loop, event) in self.crabbers.items():
+                    try:
                         loop.call_soon_threadsafe(event.set)
                         logger.debug(f"notified credential refresh to '{name}'")
-                except Exception as e:
-                    logger.exception(f"{name} failed to be notified of credential refresh: {e}")
+                    except Exception as e:
+                        logger.exception(f"{name} failed to be notified of credential refresh: {e}")
 
 
     def start_monitoring(self) -> None:

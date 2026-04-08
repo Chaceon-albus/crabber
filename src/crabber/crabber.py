@@ -208,6 +208,8 @@ class Crabber:
                         await self.danmaku.connect()
                     except Exception as e:
                         self.logger.exception(f"danmaku error: {e}")
+                else:
+                    self.logger.debug(f"danmaku status: {self.danmaku.get_status()}")
 
             await asyncio.sleep(1)
 
