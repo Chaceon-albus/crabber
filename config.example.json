@@ -20,6 +20,13 @@
                     ]
                 },
                 {
+                    "type": "recorder",
+                    "config": {
+                        "output_dir": "data/recordings",
+                        "template": "${date}_${room_id}_${title}.flv"
+                    }
+                },
+                {
                     "type": "notify",
                     "config": {
                         "channels": [

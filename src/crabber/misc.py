@@ -34,5 +34,12 @@ def saft_ts(ts: float | int) -> float:
     return ts if ts < 100_000_000_000 else ts / 1000
 
 
+def safe_filename(filename: str, fallback: str = "stream_record.flv") -> str:
+    illegal_chars = r'/\:*?"<>|' + '\r\n\t'
+    table = str.maketrans(illegal_chars, "_" * len(illegal_chars))
+    safe_name = filename.translate(table).strip().strip('.')
+    return (safe_name[:150] or fallback)
+
+
 if __name__ == "__main__":
     pass

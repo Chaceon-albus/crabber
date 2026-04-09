@@ -68,6 +68,7 @@ def main() -> None:
             except Exception as e:
                 logger.error(f"failed to register component: {e}")
 
+        crabber.start() # just to trigger online callbacks
         crabbers.append(crabber)
 
 

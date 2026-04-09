@@ -16,6 +16,7 @@ from crabber.credential import CredentialManager
 from crabber.room_info import RoomInfo
 from crabber.misc import jsonify, saft_ts
 from crabber.database import Database
+from crabber.live_stream import LiveStream, StreamStatus
 
 
 class Crabber:
@@ -185,11 +186,13 @@ class Crabber:
             self.room_info.title = room_info.get("title", "")
             self.room_info.cover = room_info.get("cover", "")
             self.room_info.is_online = (room_info.get("live_status", 0) == 1)
+            self.room_info.stream = LiveStream(ctx=self)
 
             if self.room_info.is_online:
                 self.room_info.start_time = datetime.fromtimestamp(
                     room_info.get("live_start_time", int(datetime.now().timestamp()))
                 )
+                self.room_info.stream.status = StreamStatus.ONLINE
         except Exception as e:
             self.logger.exception(f"failed to fetch initial room info: {e}")
         else:
@@ -280,6 +283,8 @@ class Crabber:
                 self.logger.debug(f"ignoring live status related event: {room_real_id} != {self.room_id}\n{jsonify(event)}")
                 return
 
+            if self.room_info.stream is None: self.room_info.stream = LiveStream(ctx=self) # make linter happy
+
             data = event.get("data", {})
             cmd = data.get("cmd", "")
 
@@ -297,9 +302,12 @@ class Crabber:
                         self.room_info.start_time = datetime.fromtimestamp(data["live_time"])
 
                     self.room_info.is_online = True
+                    self.room_info.stream.status = StreamStatus.ONLINE
 
                     if not is_currently_online: # offline -> online
                         await self._on_room_online()
+                    else:
+                        self.room_info.stream.status = StreamStatus.STREAMING
 
                 case "PREPARING":
                     self.logger.debug(f"received PREPARING event with data: {data}")
@@ -308,6 +316,7 @@ class Crabber:
                         saft_ts(data.get("send_time", 1000*datetime.now().timestamp()))
                     )
                     self.room_info.is_online = False
+                    self.room_info.stream.status = StreamStatus.OFFLINE
 
                     if is_currently_online: # online -> offline
                         await self._on_room_offline()
@@ -336,6 +345,11 @@ class Crabber:
     @property
     def room(self) -> Optional[LiveRoom]:
         return None if not self.danmaku else self.danmaku.room
+
+
+    def start(self) -> None:
+        if self.room_info.is_online and self.loop and self.loop.is_running():
+            asyncio.run_coroutine_threadsafe(self._on_room_online(), self.loop)
 
 
     def stop(self) -> None:
