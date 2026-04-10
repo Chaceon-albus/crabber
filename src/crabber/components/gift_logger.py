@@ -16,7 +16,6 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
     logger = ctx.logger
 
-    is_online = False
 
     gift_revenue = Decimal(0)
     guard_revenue = Decimal(0)
@@ -113,7 +112,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
         logger.info(f"距离上次直播结束或程序开始运行经过了{format_timedelta(dura)}")
 
         if sum_str := summary(gift_revenue, guard_revenue, sc_revenue):
-            logger.info(sum_str)
+            logger.info(f"下播(或程序运行)期间{sum_str}")
 
         if ctx.db:
             await ctx.db.record_stats(
@@ -141,7 +140,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
         logger.info(f"本次直播时长为{format_timedelta(dura)}")
 
         if sum_str := summary(gift_revenue, guard_revenue, sc_revenue):
-            logger.info(sum_str)
+            logger.info(f"直播期间{sum_str}")
 
         if ctx.db:
             await ctx.db.update_stats(
