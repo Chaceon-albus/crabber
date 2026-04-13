@@ -3,6 +3,7 @@ from __future__ import annotations
 import aiohttp
 import asyncio
 
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Callable, Optional, TYPE_CHECKING
 
@@ -38,7 +39,7 @@ class LiveStream:
         try:
             resp: dict = await self.ctx.room.get_room_play_url() # type: ignore
         except Exception as e:
-            self.ctx.logger.exception(f"failed to fetch live streams: {e}")
+            self.ctx.logger.error(f"failed to fetch live streams: {e}")
         else:
             urls = [d.get("url") for d in resp.get("durl", []) if "url" in d]
 
@@ -60,21 +61,27 @@ class LiveStream:
         except asyncio.QueueFull:
             pass
         except Exception as e:
-            self.ctx.logger.exception(f"failed to notify subscriber: {e}")
+            self.ctx.logger.error(f"failed to notify subscriber: {e}")
 
 
     async def download_stream(self, urls: Optional[list[str]] = None, timeout: Optional[aiohttp.ClientTimeout] = None) -> Optional[aiohttp.ClientResponse]:
+
         streams = urls if urls is not None else await self.get_live_streams()
-        timeout = timeout or aiohttp.ClientTimeout(total=None, connect=10.0, sock_read=10.0, sock_connect=10.0)
+        timeout = timeout or aiohttp.ClientTimeout(
+            total=None,
+            connect=10.0,
+            sock_read=30.0, # in case of network issues or cdn hiccups
+            sock_connect=10.0
+        )
 
         if not self.client:
-            self.client = aiohttp.ClientSession(
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
-                    "Referer": f"https://live.bilibili.com/{self.ctx.room_info.id}",
-                },
-                timeout=timeout,
-            )
+            headers = {
+                "Origin": "https://live.bilibili.com",
+                "Referer": f"https://live.bilibili.com/{self.ctx.room_info.id}",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+                "Connection": "keep-alive",
+            }
+            self.client = aiohttp.ClientSession(headers=headers, timeout=timeout)
 
         for stream in streams:
             self.ctx.logger.debug(f"start to download stream: {stream}")
@@ -83,17 +90,21 @@ class LiveStream:
             try:
                 resp = await self.client.get(stream, timeout=timeout, ssl=False) # some cdn may have invalid ssl certs
                 resp.raise_for_status()
+            except aiohttp.ClientResponseError as e:
+                url_str = str(e.request_info.url) if e.request_info and e.request_info.url else "unknown url"
+                url_str = (url_str[:50] + "...") if len(url_str) > 50 else url_str
+                self.ctx.logger.warning(f"failed to download stream: {e.status} {e.message} ({url_str})")
+                if resp is not None: await resp.release()
             except Exception as e:
-                self.ctx.logger.exception(f"failed to download stream: {e}")
-                if resp is not None:
-                    await resp.release()
+                self.ctx.logger.warning(f"failed to download stream: {e}")
+                if resp is not None: await resp.release()
             else:
                 return resp
 
         return None
 
 
-    def get_live_handler(self) -> Callable[[RoomInfo], asyncio._CoroutineLike]:
+    def get_live_handler(self, retry_delay: float = 10.0) -> Callable[[RoomInfo], asyncio._CoroutineLike]:
 
         ctx = self.ctx
 
@@ -104,8 +115,9 @@ class LiveStream:
                 return
 
             async def _dispatch_worker() -> None:
-                is_first_attempt = True
-                is_empty_streams = False
+
+                last_retry_time = datetime.now()
+                failure_counter = 0
 
                 try:
                     while self.status != StreamStatus.OFFLINE:
@@ -115,38 +127,47 @@ class LiveStream:
                             continue
 
                         stream = None
+                        delay = 0
 
                         try:
 
                             # StreamStatus.ONLINE means:
                             # the room is live before the program starts (first attempt to download stream)
                             # or
-                            # the room just turned live but not started streaming (first attempt will fail and retry after 10 seconds)
+                            # the room just turned live but not started streaming
                             if self.status == StreamStatus.ONLINE:
-                                if not is_first_attempt:
-                                    if is_empty_streams:
-                                        await asyncio.sleep(1) # wait a bit before retrying
-                                        continue # if the stream is empty, wait until StreamStatus.STREAMING
-                                    else:
-                                        await asyncio.sleep(10) # wait a bit before retrying
-                                else:
-                                    is_first_attempt = False
+                                # retry in ? seconds to make it after retry_delay since the last attempt
+                                if datetime.now() - last_retry_time < timedelta(seconds=retry_delay):
+                                    delay = retry_delay - (datetime.now() - last_retry_time).total_seconds()
+                            elif self.status == StreamStatus.STREAMING:
+                                # in case of flooding, wait a bit before retrying
+                                if datetime.now() - last_retry_time < timedelta(seconds=1):
+                                    delay = 1 - (datetime.now() - last_retry_time).total_seconds()
+                            else:
+                                # this should not happen, but just in case
+                                break
+
+                            if delay > 0:
+                                ctx.logger.info(f"trying to download live stream in {delay:.1f} second(s)")
+                                await asyncio.sleep(delay)
+
+                            # any attempt will update the last_retry_time
+                            last_retry_time = datetime.now()
 
                             if (stream_urls := await self.get_live_streams()):
-                                is_empty_streams = False
-                                self.status = StreamStatus.STREAMING
                                 if (stream:=await self.download_stream(urls=stream_urls)) is not None:
+                                    self.status = StreamStatus.STREAMING
+                                    failure_counter = 0 # reset failure counter on success
                                     ctx.logger.debug(f"successfully start downloading live stream, start dispatching")
                                     await self._dispatch(stream)
-                                else:
-                                    ctx.logger.warning(f"failed to download live stream, retrying in 5 seconds...")
-                                    await asyncio.sleep(5)
                             else:
-                                is_empty_streams = True # no stream urls available, will retry in the next loop
-                                await asyncio.sleep(1)
+                                failure_counter += 1
+                                if failure_counter > 3:
+                                    # the stream may not be ready anymore, back to longer retry delay
+                                    self.status = StreamStatus.ONLINE
 
                         except Exception as e:
-                            ctx.logger.exception(f"error in live stream handler: {e}")
+                            ctx.logger.error(f"error in live stream handler: {e}")
                         finally:
                             if stream is not None: await stream.release()
 
@@ -171,7 +192,8 @@ class LiveStream:
                 try:
                     chunk = await stream.content.readany()
                 except Exception as e:
-                    self.ctx.logger.exception(f"failed to read chunk from stream: {e}")
+                    # when the room goes offline, the stream will be closed and cause a timeout or other read error
+                    if self.ctx.room_info.is_online: self.ctx.logger.warning(f"failed to read chunk from stream: {e}")
                     break
                 else:
                     if not chunk: break
@@ -182,7 +204,7 @@ class LiveStream:
                         except asyncio.QueueFull:
                             self.ctx.logger.warning(f"subscriber {q!r} is full, dropping chunk")
                         except Exception as e:
-                            self.ctx.logger.exception(f"failed to dispatch chunk to subscriber: {e}")
+                            self.ctx.logger.error(f"failed to dispatch chunk to subscriber: {e}")
 
         finally:
 
