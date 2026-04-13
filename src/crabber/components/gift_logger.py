@@ -109,10 +109,10 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
     async def _on_room_online(info: RoomInfo) -> None:
         # this.start_time - previous.end_time
         dura = info.start_time - info.end_time
-        logger.info(f"距离上次直播结束或程序开始运行经过了{format_timedelta(dura)}")
+        logger.info(f"开始直播了！距离上次直播结束或程序开始运行经过了{format_timedelta(dura)}")
 
         if sum_str := summary(gift_revenue, guard_revenue, sc_revenue):
-            logger.info(f"下播(或程序运行)期间{sum_str}")
+            logger.info(f"未开播或程序运行期间{sum_str}")
 
         if ctx.db:
             await ctx.db.record_stats(
