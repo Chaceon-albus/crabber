@@ -171,6 +171,8 @@ class Crabber:
         self.danmaku.logger = self.logger.getChild("Danmaku")
         self.danmaku.logger.setLevel(logging.INFO)
 
+        self.room_info.stream = LiveStream(ctx=self)
+
         self.add_task(self._keep_danmaku_connected()) # run danmaku connection in the background
         self.add_task(self._listen_refresh_events())  # listen for credential refresh events in the background
 
@@ -191,7 +193,6 @@ class Crabber:
             self.room_info.title = room_info.get("title", self.room_info.title)
             self.room_info.cover = room_info.get("cover", self.room_info.cover)
             self.room_info.is_online = (room_info.get("live_status", 0) == 1)
-            self.room_info.stream = LiveStream(ctx=self)
 
             if self.room_info.is_online:
                 self.room_info.start_time = datetime.fromtimestamp(
@@ -199,7 +200,8 @@ class Crabber:
                 )
                 # if the room is already online, we assume it's streaming,
                 # since this function is called when the crabber is started or reconnected
-                self.room_info.stream.status = StreamStatus.STREAMING
+                if self.room_info.stream: # make linter happy
+                    self.room_info.stream.status = StreamStatus.STREAMING
         except Exception as e:
             self.logger.exception(f"failed to update room info: {e}")
         else:
