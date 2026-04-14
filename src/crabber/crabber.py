@@ -358,7 +358,10 @@ class Crabber:
 
     @property
     def room(self) -> Optional[LiveRoom]:
-        return None if not self.danmaku else self.danmaku.room
+        if self.danmaku is None: return None
+        if self.danmaku.room is None:
+            self.danmaku.room = LiveRoom(self.room_id, credential=self.cred_manager.credential)
+        return self.danmaku.room
 
 
     def start(self) -> None:
