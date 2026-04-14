@@ -14,7 +14,7 @@ from bilibili_api.live import LiveRoom, LiveDanmaku
 from crabber.logging import logger
 from crabber.credential import CredentialManager
 from crabber.room_info import RoomInfo
-from crabber.misc import jsonify, saft_ts
+from crabber.misc import jsonify, safe_ts
 from crabber.database import Database
 from crabber.live_stream import LiveStream, StreamStatus
 
@@ -45,6 +45,7 @@ class Crabber:
         self.tasks: list[asyncio.Task] = []
         self.online_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
         self.offline_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
+        self.streaming_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
         self.room_change_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
 
         self._is_ready = threading.Event()
@@ -114,6 +115,9 @@ class Crabber:
         self.offline_callbacks.append(callback)
         self.logger.debug(f"added offline callback: {callback.__name__}")
 
+    def add_streaming_callback(self, callback: Callable[[RoomInfo], asyncio._CoroutineLike]) -> None:
+        self.streaming_callbacks.append(callback)
+        self.logger.debug(f"added streaming callback: {callback.__name__}")
 
     def add_room_change_callback(self, callback: Callable[[RoomInfo], asyncio._CoroutineLike]) -> None:
         self.room_change_callbacks.append(callback)
@@ -170,21 +174,22 @@ class Crabber:
         self.add_task(self._keep_danmaku_connected()) # run danmaku connection in the background
         self.add_task(self._listen_refresh_events())  # listen for credential refresh events in the background
 
-        while self.danmaku.get_status() < 2:
-            # wait until danmaku is ready
-            await asyncio.sleep(1)
+        live_status_handler = self._get_live_status_handler()
+        for event_name in ["LIVE", "PREPARING", "ROOM_CHANGE", "CHANGE_ROOM_INFO"]:
+            self.add_handler(event_name, live_status_handler)
 
+
+    async def _update_room_info(self) -> None: # no exception will be raised
         try:
             room_info   = await self.room.get_room_info() # type: ignore
             anchor_info = room_info.get("anchor_info", {})
             room_info   = room_info.get("room_info", {})
 
-            # update some information of the crabber after danmaku is ready
-            self.uid = room_info.get("uid", -1)
-            self.room_info.area = room_info.get("area_name", "")
-            self.room_info.uname = anchor_info.get("base_info", {}).get("uname", "")
-            self.room_info.title = room_info.get("title", "")
-            self.room_info.cover = room_info.get("cover", "")
+            self.uid = room_info.get("uid", self.uid)
+            self.room_info.area = room_info.get("area_name", self.room_info.area)
+            self.room_info.uname = anchor_info.get("base_info", {}).get("uname", self.room_info.uname)
+            self.room_info.title = room_info.get("title", self.room_info.title)
+            self.room_info.cover = room_info.get("cover", self.room_info.cover)
             self.room_info.is_online = (room_info.get("live_status", 0) == 1)
             self.room_info.stream = LiveStream(ctx=self)
 
@@ -192,15 +197,13 @@ class Crabber:
                 self.room_info.start_time = datetime.fromtimestamp(
                     room_info.get("live_start_time", int(datetime.now().timestamp()))
                 )
-                self.room_info.stream.status = StreamStatus.ONLINE
+                # if the room is already online, we assume it's streaming,
+                # since this function is called when the crabber is started or reconnected
+                self.room_info.stream.status = StreamStatus.STREAMING
         except Exception as e:
-            self.logger.exception(f"failed to fetch initial room info: {e}")
+            self.logger.exception(f"failed to update room info: {e}")
         else:
             self.logger.debug(f"update room info: {self.room_info}")
-
-        live_status_handler = self._get_live_status_handler()
-        for event_name in ["LIVE", "PREPARING", "ROOM_CHANGE", "CHANGE_ROOM_INFO"]:
-            self.add_handler(event_name, live_status_handler)
 
 
     async def _keep_danmaku_connected(self) -> None:
@@ -211,6 +214,9 @@ class Crabber:
                     self.danmaku.STATUS_CLOSED, # 4
                     self.danmaku.STATUS_ERROR   # 5
                 ]:
+
+                    # in case the room status changes while danmaku is not connected
+                    await self._update_room_info() # no exception
 
                     try:
                         await self.danmaku.connect()
@@ -268,6 +274,13 @@ class Crabber:
             except Exception as e:
                 self.logger.exception(f"failed on offline callback: {e}")
 
+    async def _on_room_streaming(self) -> None:
+        for callback in self.streaming_callbacks:
+            try:
+                await callback(self.room_info)
+            except Exception as e:
+                self.logger.exception(f"failed on streaming callback: {e}")
+
     async def _on_room_change(self) -> None:
         for callback in self.room_change_callbacks:
             try:
@@ -308,12 +321,13 @@ class Crabber:
                         await self._on_room_online()
                     else:
                         self.room_info.stream.status = StreamStatus.STREAMING
+                        await self._on_room_streaming()
 
                 case "PREPARING":
                     self.logger.debug(f"received PREPARING event with data: {data}")
 
                     self.room_info.end_time = datetime.fromtimestamp(
-                        saft_ts(data.get("send_time", 1000*datetime.now().timestamp()))
+                        safe_ts(data.get("send_time", 1000*datetime.now().timestamp()))
                     )
                     self.room_info.is_online = False
                     self.room_info.stream.status = StreamStatus.OFFLINE
@@ -350,6 +364,7 @@ class Crabber:
     def start(self) -> None:
         if self.room_info.is_online and self.loop and self.loop.is_running():
             asyncio.run_coroutine_threadsafe(self._on_room_online(), self.loop)
+            asyncio.run_coroutine_threadsafe(self._on_room_streaming(), self.loop) # assume that it's streaming
 
 
     def stop(self) -> None:

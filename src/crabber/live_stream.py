@@ -24,8 +24,8 @@ class LiveStream:
     def __init__(self, ctx: Crabber) -> None:
         self.ctx = ctx
 
-        online_handler = self.get_live_handler()
-        self.ctx.add_online_callback(online_handler)
+        streaming_handler = self.get_streaming_handler()
+        self.ctx.add_streaming_callback(streaming_handler)
 
         self.status = StreamStatus.OFFLINE
         self.client: Optional[aiohttp.ClientSession] = None
@@ -104,7 +104,7 @@ class LiveStream:
         return None
 
 
-    def get_live_handler(self, retry_delay: float = 10.0) -> Callable[[RoomInfo], asyncio._CoroutineLike]:
+    def get_streaming_handler(self, retry_delay: float = 10.0) -> Callable[[RoomInfo], asyncio._CoroutineLike]:
 
         ctx = self.ctx
 
