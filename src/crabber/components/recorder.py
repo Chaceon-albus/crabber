@@ -19,7 +19,6 @@ default_events = []
 
 def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) -> Callable[[dict], Awaitable[None]]:
 
-    queue = asyncio.Queue(maxsize=128)
     logger = ctx.logger
     template = template if template else "{date}_{room_id}_{title}.flv"
 
@@ -30,6 +29,10 @@ def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) ->
 
 
     async def _recorder() -> None:
+        # Create the queue inside the coroutine so it's bound to the running event loop
+        queue = asyncio.Queue(maxsize=128)
+        ctx.room_info.stream.subscribe(queue)  # type: ignore
+
         fp: Optional[AsyncBufferedIOBase] = None
         while True:
             try:
@@ -66,7 +69,6 @@ def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) ->
 
 
     ctx.add_task(_recorder())
-    ctx.room_info.stream.subscribe(queue) # type: ignore
 
 
     return empty_handler
