@@ -30,7 +30,7 @@ def format_timedelta(td: timedelta) -> str:
     return "".join(parts) if parts else "少于1分钟"
 
 
-def saft_ts(ts: float | int) -> float:
+def safe_ts(ts: float | int) -> float:
     return ts if ts < 100_000_000_000 else ts / 1000
 
 
