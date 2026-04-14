@@ -61,7 +61,7 @@ def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) ->
             except asyncio.CancelledError:
                 logger.info("recorder task cancelled")
                 if fp is not None: await fp.close()
-                fp = None
+                return
             except Exception as e:
                 logger.error(f"recorder error: {e}")
                 if fp is not None: await fp.close()
