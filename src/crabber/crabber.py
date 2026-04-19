@@ -173,8 +173,8 @@ class Crabber:
 
         self.room_info.stream = LiveStream(ctx=self)
 
-        self.add_task(self._keep_danmaku_connected()) # run danmaku connection in the background
         self.add_task(self._listen_refresh_events())  # listen for credential refresh events in the background
+        self.add_task(self._keep_danmaku_connected()) # run danmaku connection in the background
 
         live_status_handler = self._get_live_status_handler()
         for event_name in ["LIVE", "PREPARING", "ROOM_CHANGE", "CHANGE_ROOM_INFO"]:
@@ -245,7 +245,7 @@ class Crabber:
 
 
     async def _listen_refresh_events(self) -> None:
-        # looks like a useless function since credential is a reference
+
         while True:
             if not self.refresh_event:
                 await asyncio.sleep(1)
@@ -254,7 +254,11 @@ class Crabber:
             await self.refresh_event.wait()
             self.refresh_event.clear()
 
-            self.logger.debug("credential refresh signal received, applying updates...")
+            if self.danmaku and self.danmaku.credential and self.cred_manager.credential:
+                self.logger.debug("updating credential from cred_manager...")
+                self.danmaku.room = LiveRoom(self.room_id, credential=self.cred_manager.credential)
+                self.danmaku.credential = self.cred_manager.credential
+                # await self.danmaku.disconnect() # do we need to force a reconnect?
 
             try:
                 pass
