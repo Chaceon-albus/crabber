@@ -20,7 +20,7 @@ default_events = []
 def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) -> Callable[[dict], Awaitable[None]]:
 
     logger = ctx.logger
-    template = template if template else "{date}_{room_id}_{title}.flv"
+    template = template if template else "${date}_${room_id}_${title}.flv"
 
     output_dir = Path(path)
     if not output_dir.exists() or not output_dir.is_dir():
