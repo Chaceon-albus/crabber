@@ -19,6 +19,12 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
             msg = info[1]
             uid = info[2][0]
             usr = info[2][1]
+
+            # skip self danmaku
+            if uid == ctx.cred_manager.uid:
+                logger.debug(f"skip self danmaku from user {uid}")
+                return
+
             logger.debug(f"{usr}说: {msg}")
 
             if ctx.db:

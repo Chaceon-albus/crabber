@@ -21,10 +21,11 @@ class CredentialManager:
 
         self.cred_file = fn
         self.has_cred = False
+        self.uid = -999
 
         if self.cred_file and os.path.isfile(self.cred_file):
             with open(self.cred_file, mode="r", encoding="utf-8") as f:
-                cred_json = json.load(f)
+                cred_json: dict = json.load(f)
             logger.info(f"credential file loaded from {self.cred_file}")
         else:
             cred_json = {}
@@ -93,6 +94,15 @@ class CredentialManager:
 
             # notify all crabbers
             await self._notify_crabbers()
+
+        # check uid
+        if self.uid < 0 and self.credential.dedeuserid:
+            try:
+                self.uid = int(self.credential.dedeuserid)
+            except Exception as e:
+                logger.error(f"failed to update uid to {self.credential.dedeuserid}")
+            else:
+                logger.info(f"update self uid to {self.uid}")
 
 
     def start_monitoring(self) -> None:
