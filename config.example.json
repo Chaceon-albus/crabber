@@ -27,6 +27,26 @@
                     }
                 },
                 {
+                    "type": "chatter",
+                    "config": {
+                        "on_live": {"message": "欢迎xxxx！chatter组件只在开播中生效哦"},
+                        "on_cron": [
+                            {
+                                "schedule": "*/15 * * * *",
+                                "message": [
+                                    "喜欢主播的点点关注不迷路~",
+                                    "点个赞支持一下吧！"
+                                ],
+                                "random": true
+                            },
+                            {
+                                "schedule": "0 * * * *",
+                                "message": "整点报时：现在是${time}，记得起来活动一下哦"
+                            }
+                        ]
+                    }
+                },
+                {
                     "type": "notify",
                     "config": {
                         "channels": [

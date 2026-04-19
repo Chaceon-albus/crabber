@@ -365,6 +365,11 @@ class Crabber:
             self.danmaku.room = LiveRoom(self.room_id, credential=self.cred_manager.credential)
         return self.danmaku.room
 
+    @property
+    def has_credential(self) -> bool:
+        room = self.room
+        return True if room and room.credential.has_sessdata() else True
+
 
     def start(self) -> None:
         if self.room_info.is_online and self.loop and self.loop.is_running():
