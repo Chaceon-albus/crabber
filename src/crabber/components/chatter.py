@@ -101,7 +101,7 @@ class MessageSelector(UserString):
 
     def __init__(self, message: list[str] | str, random: bool = False) -> None:
         self.messages = [message] if isinstance(message, str) else message
-        self.is_random = random
+        self.random   = random
         self._counter = 0
 
         initial_data = self.messages[0] if self.messages else ""
@@ -111,7 +111,7 @@ class MessageSelector(UserString):
         if not self.messages:
             return ""
 
-        if self.is_random:
+        if self.random:
             return random.choice(self.messages)
         else:
             idx = self._counter % len(self.messages)
@@ -123,4 +123,4 @@ class MessageSelector(UserString):
         return self.data
 
     def __repr__(self) -> str:
-        return f"MessageSelector(count={len(self.messages)}, random={self.is_random}, current={self._counter})"
+        return f"MessageSelector(count={len(self.messages)}, random={self.random}, current={self._counter})"
