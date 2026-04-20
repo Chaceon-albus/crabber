@@ -57,7 +57,7 @@ class CredentialManager:
                     loop.call_soon_threadsafe(event.set)
                     logger.debug(f"notified credential refresh to '{name}'")
                 except Exception as e:
-                    logger.exception(f"{name} failed to be notified of credential refresh: {e}")
+                    logger.error(f"{name} failed to be notified of credential refresh: {e}")
 
 
     async def _check_and_refresh(self) -> None:
@@ -67,7 +67,7 @@ class CredentialManager:
             self.credential = biliapi.Credential(**cred_json)
             await self._notify_crabbers()
 
-        logger.info("checking credential for refresh...")
+        logger.debug("checking credential for refresh...")
         if await self.credential.check_refresh():
             await self.credential.refresh()
             logger.info("credential refreshed")
@@ -88,7 +88,7 @@ class CredentialManager:
                 with open(self.cred_file, mode="w", encoding="utf-8") as f:
                     json.dump(cookies, f, indent=4, sort_keys=False, ensure_ascii=False)
             except Exception as e:
-                logger.exception(f"failed to save refreshed credential: {e}")
+                logger.warning(f"failed to save refreshed credential: {e}")
             else:
                 logger.debug(f"refreshed credential saved to {self.cred_file}")
 

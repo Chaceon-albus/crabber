@@ -48,7 +48,7 @@ def get_handler(ctx: Crabber, on_live: dict = {}, on_cron: list[dict] = [], *arg
                 "date": now.strftime("%Y/%m/%d"),
             }):
                 await ctx.room.send_danmaku(Danmaku(msg_content), info.id)
-                logger.debug(f"sent danmaku: {msg_content}")
+                logger.info(f"sent danmaku: {msg_content}")
             else:
                 logger.warning("skip empty message")
         except Exception as e:
