@@ -32,7 +32,7 @@ async def send_notify(room: RoomInfo, config: dict = {}, logger: Logger = defaul
         "title": f"{room.uname}正在直播：{room.title}",
         "message": room.area,
         "attach": replace_host(room.cover, replace_map),
-        "click": f"https://live.bilibili.com/{room.id}",
+        # "click": f"https://live.bilibili.com/{room.id}", # be not too aggressive
         "actions": [
             {
                 "action": "view",
@@ -40,7 +40,7 @@ async def send_notify(room: RoomInfo, config: dict = {}, logger: Logger = defaul
                 "url": f"https://live.bilibili.com/{room.id}",
                 "clear": True
             }
-        ]
+        ],
     }
 
     async with aiohttp.ClientSession() as client:
