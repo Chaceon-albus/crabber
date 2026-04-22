@@ -1,4 +1,5 @@
 import random
+import json
 import time
 
 from collections import UserString
@@ -50,6 +51,7 @@ def get_handler(ctx: Crabber, on_live: dict = {}, on_cron: list[dict] = [], *arg
         if not ctx.has_credential or not ctx.room:
             logger.warning("invalid credential or room not initialized, skip")
             return
+
         try:
             now = datetime.now()
             if msg_content := Template(str(selector)).safe_substitute({
@@ -58,8 +60,10 @@ def get_handler(ctx: Crabber, on_live: dict = {}, on_cron: list[dict] = [], *arg
                 "time": now.strftime("%H:%M"),
                 "date": now.strftime("%Y/%m/%d"),
             }):
-                await ctx.room.send_danmaku(Danmaku(msg_content), info.id)
+                resp = await ctx.room.send_danmaku(Danmaku(msg_content), info.id)
                 logger.info(f"sent danmaku: {msg_content}")
+                # TODO: change to debug level
+                logger.info(f"damaku server resp: {_danmaku_resp_brief(resp)}")
             else:
                 logger.warning("skip empty message")
         except Exception as e:
@@ -141,3 +145,17 @@ class MessageSelector(UserString):
 
     def __repr__(self) -> str:
         return f"MessageSelector(count={len(self.messages)}, random={self.random}, current={self._counter})"
+
+
+def _danmaku_resp_brief(resp: dict) -> str:
+    info = resp.get("mode_info", {})
+
+    try:
+        extra = json.loads(info.get("extra", "{}"))
+    except (json.JSONDecodeError, TypeError):
+        extra = {}
+
+    keys = ["master_player_hidden", "dm_score", "is_audited"]
+    parts = [f"{k} = {extra[k]}" for k in keys if k in extra]
+
+    return ", ".join(parts)
