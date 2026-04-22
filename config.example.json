@@ -32,7 +32,7 @@
                         "on_live": {"message": "欢迎xxxx！chatter组件只在开播中生效哦"},
                         "on_cron": [
                             {
-                                "schedule": "*/15 * * * *",
+                                "interval": {"minutes": 30, "seconds": 1},
                                 "message": [
                                     "喜欢主播的点点关注不迷路~",
                                     "点个赞支持一下吧！"

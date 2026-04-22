@@ -8,6 +8,7 @@ from typing import Callable, Awaitable
 
 from apscheduler.job import Job
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from bilibili_api import Danmaku
 
 from crabber.crabber import Crabber
@@ -28,11 +29,21 @@ def get_handler(ctx: Crabber, on_live: dict = {}, on_cron: list[dict] = [], *arg
     crontab_msg = [
         {
             "schedule": cc.get("schedule", ""),
+            "interval": cc.get("interval", {}),
             "message": MessageSelector(cc.get("message", ""), cc.get("random", False)),
-        }  for cc in on_cron if cc.get("schedule")
+        }  for cc in on_cron if cc.get("schedule") or cc.get("interval")
     ]
 
     crontab_jobs: list[Job] = []
+
+
+    # sanity check
+    for cron in crontab_msg:
+        try:
+            if (schedule:=cron["schedule"]): CronTrigger.from_crontab(schedule)
+            if (interval:=cron["interval"]): IntervalTrigger(**interval)
+        except Exception as e:
+            logger.error(f"failed to check trigger for {cron}: {e}")
 
 
     async def _send_danmaku_noexcept(selector: MessageSelector, info: RoomInfo = ctx.room_info) -> None:
@@ -67,10 +78,16 @@ def get_handler(ctx: Crabber, on_live: dict = {}, on_cron: list[dict] = [], *arg
 
         for cron in crontab_msg:
             try:
+                schedule = cron["schedule"]
+                interval = cron["interval"]
+
+                # if both configured, prefer to use interval
+                trigger = IntervalTrigger(**interval) if interval else CronTrigger.from_crontab(schedule)
+
                 crontab_jobs.append(
                     ctx.scheduler.add_job(
-                        _send_danmaku_noexcept,
-                        CronTrigger.from_crontab(cron["schedule"]),
+                        func=_send_danmaku_noexcept,
+                        trigger=trigger,
                         args=[cron["message"]]
                     )
                 )
