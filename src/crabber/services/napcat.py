@@ -1,0 +1,53 @@
+import aiohttp
+import logging
+
+from .interface import BaseService
+
+
+class NapCatService(BaseService):
+
+    def __init__(self, config: dict, logger: logging.Logger) -> None:
+        super().__init__()
+
+        self.logger = logger
+        self.config = config
+
+        self.endpoint: str = config["endpoint"].rstrip("/")
+        self.token = config.get("token", "")
+
+        if not self.token: logger.info("napcat token not configured, please make sure the napcat instance is secured")
+
+        self.headers = {"Content-Type": "application/json"}
+        if self.token: self.headers.update({"Authorization": f"Bearer {self.token}"})
+
+        self.client = aiohttp.ClientSession(
+            headers = self.headers,
+            timeout = aiohttp.ClientTimeout(total=10.0),
+        )
+
+
+    async def _call(self, action: str, *args, **kwargs) -> dict:
+
+        url = f"{self.endpoint}/{action}"
+
+        aiohttp_reserved_keys = {"params", "headers", "timeout", "proxy", "ssl"}
+        request_options = {k: kwargs.pop(k) for k in aiohttp_reserved_keys if k in kwargs}
+
+        json_payload = args[0] if args and isinstance(args[0], dict) else kwargs
+        json_payload = {k: v for k, v in json_payload.items() if v is not None}
+
+        try:
+            async with self.client.post(url, json=json_payload, **request_options) as resp:
+                resp.raise_for_status()
+                return await resp.json()
+        except Exception as e:
+            self.logger.error(f"NapCat API call failed: {action} -> {e}")
+            raise
+
+
+    def __getattr__(self, name):
+
+        async def wrapper(*args, **kwargs):
+            return await self._call(name, *args, **kwargs)
+
+        return wrapper

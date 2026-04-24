@@ -5,6 +5,7 @@ from crabber.crabber import Crabber
 from crabber.room_info import RoomInfo
 
 from crabber.components.notify.ntfy_provider import send_notify as send_ntfy_notify
+from crabber.components.notify.napcat_provider import send_notify as send_napcat_notify
 
 
 default_events = [] # no event needed for notify component
@@ -26,10 +27,13 @@ def get_handler(ctx: Crabber, channels: list[dict], *args, **kwargs) -> Callable
 
         logger.info(f"room {room_info.id} is online, sending notifications to channels...")
         for channel in channels:
+            if not channel.get("enabled", True): continue
             try:
                 match provider := channel.get("provider", ""):
                     case "ntfy":
                         await send_ntfy_notify(room_info, channel.get("config", {}), logger)
+                    case "napcat":
+                        await send_napcat_notify(ctx, room_info, channel.get("config", {}), logger)
                     case _:
                         logger.warning(f"unknown notify provider: {provider}")
             except Exception as e:

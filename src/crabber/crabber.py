@@ -17,12 +17,13 @@ from crabber.room_info import RoomInfo
 from crabber.misc import jsonify, safe_ts
 from crabber.database import Database
 from crabber.live_stream import LiveStream, StreamStatus
+from crabber.services import BaseService, init_services
 
 
 class Crabber:
 
 
-    def __init__(self, name: str, room_id: int, cred_manager: CredentialManager, database: list = []) -> None:
+    def __init__(self, name: str, room_id: int, cred_manager: CredentialManager, database: list = [], services: list = []) -> None:
 
         self.logger = logger.getChild(f"({name})")
 
@@ -47,6 +48,9 @@ class Crabber:
         self.offline_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
         self.streaming_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
         self.room_change_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
+
+        self._services_config = services
+        self.services: dict[str, BaseService] = {} # key: type -> value: Service class
 
         self._is_ready = threading.Event()
 
@@ -163,6 +167,8 @@ class Crabber:
 
         self.scheduler = AsyncIOScheduler()
         self.scheduler.start()
+
+        self.services = await init_services(self._services_config, self.logger)
 
         biliapi.select_client("aiohttp") # httpx does not support websocket
 

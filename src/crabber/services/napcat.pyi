@@ -1,0 +1,16 @@
+import logging
+
+
+class NapCatService:
+    def __init__(self,config: dict, logger: logging.Logger) -> None: ...
+    async def send_private_msg(self, user_id: str, message: str) -> dict: ...
+    async def send_msg(self, message_type: str, message: str, group_id: str | None = None, user_id: str | None = None) -> dict: ...
+    # {
+    #     "status": "ok",
+    #     "retcode": 0,
+    #     "data": { "message_id": 123456789 },
+    #     "message": "",
+    #     "wording": "",
+    #     "echo": "tlasdasdjhj",
+    #     "stream": "normal-action"
+    # }

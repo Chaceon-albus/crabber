@@ -6,18 +6,11 @@
             "name": "nickname",
             "room_id": 12345,
             "components": [
-                {
-                    "type": "danmu_logger"
-                },
-                {
-                    "type": "gift_logger"
-                },
+                { "type": "danmu_logger" },
+                { "type": "gift_logger" },
                 {
                     "type": "event_logger",
-                    "events": [
-                        "SPECIAL_GIFT",
-                        "SYS_MSG"
-                    ]
+                    "events": ["SPECIAL_GIFT", "SYS_MSG"]
                 },
                 {
                     "type": "recorder",
@@ -63,6 +56,14 @@
                                         "www.example.com": "www.replaced.com"
                                     }
                                 }
+                            },
+                            {
+                                "name": "napcat-service",
+                                "provider": "napcat",
+                                "enabled": true,
+                                "config": {
+                                    "groups": [123456789, 1145141919810]
+                                }
                             }
                         ]
                     }
@@ -81,6 +82,15 @@
                         "account_id": "your_account_id",
                         "api_token": "your_api_token",
                         "dataset_id": "your_dataset_id"
+                    }
+                }
+            ],
+            "services": [
+                {
+                    "type": "napcat",
+                    "config": {
+                        "endpoint": "http://127.0.0.1:3000",
+                        "token": "???????????????"
                     }
                 }
             ]

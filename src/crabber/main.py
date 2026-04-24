@@ -42,6 +42,7 @@ def main() -> None:
             room_id=c["room_id"],
             cred_manager=bili_cm,
             database=c.get("database", []),
+            services=c.get("services", []),
         )
 
         for component in c.get("components", []):
