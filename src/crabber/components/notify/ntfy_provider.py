@@ -43,10 +43,10 @@ async def send_notify(room: RoomInfo, config: dict = {}, logger: Logger = defaul
         ],
     }
 
-    async with aiohttp.ClientSession() as client:
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as client:
         try:
-            resp = await client.post(endpoint, headers=headers, json=payload)
-            resp.raise_for_status()
+            async with client.post(endpoint, headers=headers, json=payload) as resp:
+                resp.raise_for_status()
         except Exception as e:
             logger.error(f"ntfy[{name}] failed to send notification: {e}")
 

@@ -12,18 +12,19 @@ class NapCatService(BaseService):
         super().__init__()
 
         self.logger = logger
-        self.config = config
-
         self.endpoint: str = config["endpoint"].rstrip("/")
-        self.token = config.get("token", "")
 
-        if not self.token: logger.info("napcat token not configured, please make sure the napcat instance is secured")
+        headers = {"Content-Type": "application/json"}
 
-        self.headers = {"Content-Type": "application/json"}
-        if self.token: self.headers.update({"Authorization": f"Bearer {self.token}"})
+        if (token:=config.get("token", "")):
+            headers.update({"Authorization": f"Bearer {token}"})
+        else:
+            logger.info("napcat token not configured, please make sure the napcat instance is secured")
 
+        # services are initialized under async Crabber._bootstrap(...),
+        # so it is safe to create a ClientSession here
         self.client = aiohttp.ClientSession(
-            headers = self.headers,
+            headers = headers,
             timeout = aiohttp.ClientTimeout(total=10.0),
         )
 
