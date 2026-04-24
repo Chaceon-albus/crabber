@@ -1,6 +1,8 @@
 import aiohttp
 import logging
 
+from crabber.misc import jsonify
+
 from .interface import BaseService
 
 
@@ -36,13 +38,24 @@ class NapCatService(BaseService):
         json_payload = args[0] if args and isinstance(args[0], dict) else kwargs
         json_payload = {k: v for k, v in json_payload.items() if v is not None}
 
+        resp_json = {}
+
         try:
             async with self.client.post(url, json=json_payload, **request_options) as resp:
                 resp.raise_for_status()
-                return await resp.json()
-        except Exception as e:
+                resp_json = await resp.json()
+        except aiohttp.ClientResponseError as e:
+            err_msg = f"NapCat API call failed: {action} -> [{e.status}] {e.message}"
+            if resp_json: err_msg += f"\n{jsonify(resp_json)}"
             self.logger.error(f"NapCat API call failed: {action} -> {e}")
             raise
+        except Exception as e:
+            err_msg = f"NapCat API call failed: {action} -> {e}"
+            if resp_json: err_msg += f"\n{jsonify(resp_json)}"
+            self.logger.error(f"NapCat API call failed: {action} -> {e}")
+            raise
+        else:
+            return resp_json
 
 
     def __getattr__(self, name):

@@ -4,8 +4,8 @@ from datetime import timedelta
 from decimal import Decimal
 
 
-def jsonify(obj: dict) -> str:
-    return json.dumps(obj, indent=2, ensure_ascii=False)
+def jsonify(obj: dict, indent: int=2, ensure_ascii: bool=False) -> str:
+    return json.dumps(obj, indent=indent, ensure_ascii=ensure_ascii)
 
 
 def coin_to_cny(coin: int|float|Decimal, rate: float = 0.001) -> Decimal:
