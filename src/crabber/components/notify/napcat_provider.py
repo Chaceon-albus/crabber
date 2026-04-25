@@ -24,29 +24,4 @@ async def send_notify(ctx: Crabber, room: RoomInfo, config: dict = {}, logger: L
         f"https://live.bilibili.com/{room.id}"
     )
 
-    try:
-
-        group_tasks = [napcat.send_msg(
-            message_type="group",
-            group_id=f"{gid}",
-            message=content,
-        ) for gid in config.get("groups", [])]
-
-        private_tasks = [napcat.send_msg(
-            message_type="private",
-            user_id=f"{uid}",
-            message=content,
-        ) for uid in config.get("users", [])]
-
-        results = await asyncio.gather(*group_tasks, *private_tasks, return_exceptions=True)
-        all_ids = config.get("groups", []) + config.get("users", [])
-
-        for k, res in enumerate(results):
-            if isinstance(res, Exception):
-                logger.error(f"failed to notify {all_ids[k]}: {res}")
-
-    except Exception as e:
-        logger.error(f"failed to send live notify msg: {e}")
-    else:
-        logger.info(f"success to broadcast live notify msg to {all_ids}")
-        logger.debug(f"message = {content}")
+    await napcat.send_msg_concurrently(content, config.get("groups", []), config.get("users", []))

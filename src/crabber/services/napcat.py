@@ -1,4 +1,5 @@
 import aiohttp
+import asyncio
 import logging
 
 from crabber.misc import jsonify
@@ -57,6 +58,60 @@ class NapCatService(BaseService):
             raise
         else:
             return resp_json
+
+
+    async def send_msg_concurrently(self, content: str | list, groups: list, users: list) -> None:
+        try:
+
+            group_tasks = [self.send_msg(
+                message_type="group",
+                group_id=f"{gid}",
+                message=content,
+            ) for gid in groups]
+
+            private_tasks = [self.send_msg(
+                message_type="private",
+                user_id=f"{uid}",
+                message=content,
+            ) for uid in users]
+
+            results = await asyncio.gather(*group_tasks, *private_tasks, return_exceptions=True)
+            all_ids = groups + users
+
+            for k, res in enumerate(results):
+                if isinstance(res, Exception):
+                    self.logger.error(f"failed to send to {all_ids[k]}: {res}")
+
+        except Exception as e:
+            self.logger.error(f"failed to send msg: {e}")
+        else:
+            self.logger.info(f"success to send msg to {all_ids}")
+            self.logger.debug(f"message = {content}")
+
+
+    async def send_msg_sequentially(self, content: str | list, groups: list, users: list, cooldown: int=2) -> None:
+
+        for gid in groups:
+            try:
+                await self.send_msg(
+                    message_type="group",
+                    group_id=f"{gid}",
+                    message=content,
+                )
+                await asyncio.sleep(cooldown)
+            except Exception as e:
+                self.logger.error(f"failed to send msg to group {gid}: {e}")
+
+        for uid in users:
+            try:
+                await self.send_msg(
+                    message_type="group",
+                    group_id=f"{uid}",
+                    message=content,
+                )
+                await asyncio.sleep(cooldown)
+            except Exception as e:
+                self.logger.error(f"failed to send msg to user {uid}: {e}")
 
 
     def __getattr__(self, name):
