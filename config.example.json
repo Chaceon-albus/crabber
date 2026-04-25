@@ -67,6 +67,14 @@
                             }
                         ]
                     }
+                },
+                {
+                    "type": "parrot",
+                    "requires": ["napcat", "this key takes no effect, but it does require napcat service"],
+                    "config": {
+                        "interval": 600,
+                        "groups": [123456789, 1145141919810]
+                    }
                 }
             ],
             "database": [
