@@ -62,8 +62,7 @@ def get_handler(ctx: Crabber, on_live: dict = {}, on_cron: list[dict] = [], *arg
             }):
                 resp = await ctx.room.send_danmaku(Danmaku(msg_content), info.id)
                 logger.info(f"sent danmaku: {msg_content}")
-                # TODO: change to debug level
-                logger.info(f"damaku server resp: {_danmaku_resp_brief(resp)}")
+                logger.debug(f"damaku server resp: {_danmaku_resp_brief(resp)}")
             else:
                 logger.warning("skip empty message")
         except Exception as e:
