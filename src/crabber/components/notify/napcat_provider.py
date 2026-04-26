@@ -24,4 +24,9 @@ async def send_notify(ctx: Crabber, room: RoomInfo, config: dict = {}, logger: L
         f"https://live.bilibili.com/{room.id}"
     )
 
-    await napcat.send_msg_concurrently(content, config.get("groups", []), config.get("users", []))
+    groups = config.get("groups", [])
+    users = config.get("users", [])
+
+    await napcat.send_msg_concurrently(content, groups, users)
+
+    ctx.logger.info(f"success to send notify to group {groups} and user {users}")

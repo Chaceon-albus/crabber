@@ -87,7 +87,6 @@ class NapCatService(BaseService):
         except Exception as e:
             self.logger.error(f"failed to send msg: {e}")
         else:
-            self.logger.info(f"success to send msg to {all_ids}")
             self.logger.debug(f"message = {content}")
 
 

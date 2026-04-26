@@ -30,6 +30,8 @@ def get_handler(ctx: Crabber, groups: list = [], users: list = [], interval: int
                 await dn.set_like(status=True) # why not
         except Exception as e:
             logger.info(f"failed to set like for dynamic {dn.get_dynamic_id()}: {e}")
+        else:
+            await asyncio.sleep(1)
 
         s = ctx.services.get("napcat")
         napcat = s if isinstance(s, NapCatService) else None
@@ -65,6 +67,7 @@ def get_handler(ctx: Crabber, groups: list = [], users: list = [], interval: int
         if content:
             logger.debug(f"sending {content}")
             await napcat.send_msg_concurrently(content, groups, users)
+            logger.info(f"success to forward dynamic {dn.get_dynamic_id()} to group {groups} and user {users}")
 
 
     async def parrot_fetch_dynamic() -> None:
@@ -95,11 +98,11 @@ def get_handler(ctx: Crabber, groups: list = [], users: list = [], interval: int
                     if (pub_ts:=dynamic.get("modules", {}).get("module_author", {}).get("pub_ts", "")):
                         try:
                             pub_time = datetime.fromtimestamp(int(pub_ts))
-                            if (datetime.now() - pub_time).total_seconds() > 2 * interval:
+                            if (time_shift:=(datetime.now() - pub_time)).total_seconds() > 2 * interval:
                                 # likely to be published before the program start
                                 # since it's too long time ago, simple ignore it
                                 dynamic_memory[id_str] = True
-                                logger.debug(f"added dynamic {id_str} into memory")
+                                logger.info(f"added dynamic {id_str} into memory, reason: {time_shift} > {2*interval}s")
                                 continue
                         except Exception as e:
                             logger.error("failed to check publish date: {e}")
@@ -141,7 +144,7 @@ def get_handler(ctx: Crabber, groups: list = [], users: list = [], interval: int
                     await asyncio.sleep(cooldown)
                     # marked the id_str on success
                     dynamic_memory[id_str] = True
-                    logger.debug(f"added dynamic {id_str} into memory")
+                    logger.info(f"added dynamic {id_str} into memory, reason: forward success")
 
         except Exception as e:
             logger.error(f"failed to fetch new dynamics: {e}")
