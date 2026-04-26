@@ -227,10 +227,7 @@ def opus_to_message(opus: dict) -> list[dict]:
         }]
 
     summary = opus.get("summary", {})
-    archive = opus.get("archive", {})
-
     summary = summary if summary else {}
-    archive = archive if archive else {}
 
     if summary:
         # normal dynamic
@@ -255,10 +252,6 @@ def opus_to_message(opus: dict) -> list[dict]:
         else:
             # should not happen?
             pass
-
-    if archive:
-        # publish video dynamic
-        pass
 
     for pic in opus.get("pics", []):
         if not isinstance(pic, dict): continue

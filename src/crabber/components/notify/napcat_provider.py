@@ -18,7 +18,8 @@ async def send_notify(ctx: Crabber, room: RoomInfo, config: dict = {}, logger: L
     napcat: NapCatService = s
 
     content = (
-        f"[CQ:image,file={room.cover}]\n"
+        # no newline needed after [CQ:image]
+        f"[CQ:image,file={room.cover}]"
         f"{room.uname}正在直播：{room.title}\n"
         f"分区：{room.area}\n"
         f"https://live.bilibili.com/{room.id}"
