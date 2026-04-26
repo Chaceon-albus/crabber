@@ -26,7 +26,9 @@ class NapCatService(BaseService):
         # so it is safe to create a ClientSession here
         self.client = aiohttp.ClientSession(
             headers = headers,
-            timeout = aiohttp.ClientTimeout(total=10.0),
+            # napcat may need to download many images before sending
+            # make timeout longer to wait
+            timeout = aiohttp.ClientTimeout(total=60.0),
         )
 
 
