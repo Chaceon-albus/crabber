@@ -3,6 +3,7 @@ import logging
 from crabber.logging import logger as default_logger
 from .interface import BaseService
 from .napcat import NapCatService
+from .ntfy import NtfyService
 
 
 async def init_services(config: list, logger: logging.Logger = default_logger) -> dict[str, BaseService]:
@@ -14,6 +15,8 @@ async def init_services(config: list, logger: logging.Logger = default_logger) -
             match stype:=sc.get("type", ""):
                 case "napcat":
                     services[stype] = NapCatService(sc.get("config", {}), logger)
+                case "ntfy":
+                    services[stype] = NtfyService(sc.get("config", {}), logger)
                 case _:
                     logger.warning(f"unknown service type {stype}")
         else:

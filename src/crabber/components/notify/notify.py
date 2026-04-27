@@ -31,7 +31,7 @@ def get_handler(ctx: Crabber, channels: list[dict], *args, **kwargs) -> Callable
             try:
                 match provider := channel.get("provider", ""):
                     case "ntfy":
-                        await send_ntfy_notify(room_info, channel.get("config", {}), logger)
+                        await send_ntfy_notify(ctx, room_info, channel.get("config", {}), logger)
                     case "napcat":
                         await send_napcat_notify(ctx, room_info, channel.get("config", {}), logger)
                     case _:

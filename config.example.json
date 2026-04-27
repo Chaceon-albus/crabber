@@ -48,10 +48,8 @@
                                 "provider": "ntfy",
                                 "enabled": true,
                                 "config": {
-                                    "endpoint": "https://ntfy.sh/",
                                     "topic": "my_topic",
                                     "priority": 3,
-                                    "token": "tk_...",
                                     "replace_host": {
                                         "www.example.com": "www.replaced.com"
                                     }
@@ -99,6 +97,13 @@
                     "config": {
                         "endpoint": "http://127.0.0.1:3000",
                         "token": "???????????????"
+                    }
+                },
+                {
+                    "type": "ntfy",
+                    "config": {
+                        "endpoint": "https://ntfy.sh/",
+                        "token": "tk_..."
                     }
                 }
             ]

@@ -8,7 +8,9 @@ from crabber.logging import logger as default_logger
 from crabber.services import NapCatService
 
 
+# let it crash if anything goes wrong, caller will handle it
 async def send_notify(ctx: Crabber, room: RoomInfo, config: dict = {}, logger: Logger = default_logger) -> None:
+
     s = ctx.services.get("napcat", None)
 
     if not s or not isinstance(s, NapCatService):
