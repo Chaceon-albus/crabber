@@ -17,7 +17,13 @@ default_events = []
 
 
 
-def get_handler(ctx: Crabber, groups: list = [], users: list = [], interval: int = 600, cooldown: int = 5, *args, **kwargs) -> Callable[[dict], Awaitable[None]]:
+def get_handler(
+    ctx: Crabber,
+    extra_uids: list[int] = [],
+    groups: list[int] = [], users: list[int] = [],
+    interval: int = 600, cooldown: int = 5,
+    *args, **kwargs,
+) -> Callable[[dict], Awaitable[None]]:
 
 
     logger = ctx.logger
@@ -72,82 +78,89 @@ def get_handler(ctx: Crabber, groups: list = [], users: list = [], interval: int
 
     async def parrot_fetch_dynamic() -> None:
 
-        if ctx.uid < 0:
-            logger.warning(f"invalid uid {ctx.uid}")
+        raw_uids = [ctx.uid, *extra_uids]
+        uids = [uid for uid in raw_uids if uid > 0]
+
+        if not uids:
+            logger.warning(f"no valid uid found in {raw_uids}!")
             return
 
         if not ctx.room or not ctx.room.credential or not ctx.has_credential:
             logger.warning(f"get_dynamic requires credential to be configured")
             return
 
-        try:
-            resp = await User(ctx.uid, ctx.room.credential).get_dynamics_new()
-            dynamics = resp.get("items", [])
+        for uid in uids:
+            logger.info(f"fetching dynamics for uid = {uid}")
+            try:
+                resp = await User(uid, ctx.room.credential).get_dynamics_new()
+                dynamics = resp.get("items", [])
 
-            for dynamic in dynamics:
+                for dynamic in dynamics:
 
-                dn = None
-                parrot_prefix = ""
+                    dn = None
+                    parrot_prefix = ""
 
-                if (id_str:=dynamic.get("id_str", "")):
+                    if (id_str:=dynamic.get("id_str", "")):
 
-                    # check if the dynamic has been handled before
-                    if id_str in dynamic_memory: continue
+                        # check if the dynamic has been handled before
+                        if id_str in dynamic_memory: continue
 
-                    # check dynamic publish date if pub_ts exists
-                    if (pub_ts:=dynamic.get("modules", {}).get("module_author", {}).get("pub_ts", "")):
+                        # check dynamic publish date if pub_ts exists
+                        if (pub_ts:=dynamic.get("modules", {}).get("module_author", {}).get("pub_ts", "")):
+                            try:
+                                pub_time = datetime.fromtimestamp(int(pub_ts))
+                                if (time_shift:=(datetime.now() - pub_time)).total_seconds() > 2 * interval:
+                                    # likely to be published before the program start
+                                    # since it's too long time ago, simple ignore it
+                                    dynamic_memory[id_str] = True
+                                    logger.info(f"added dynamic {id_str} into memory, reason: {time_shift} > {2*interval}s")
+                                    continue
+                            except Exception as e:
+                                logger.error("failed to check publish date: {e}")
+
+                        # get author name
+                        author_name = dynamic.get("modules", {}).get("module_author", {}).get("name", "")
+
                         try:
-                            pub_time = datetime.fromtimestamp(int(pub_ts))
-                            if (time_shift:=(datetime.now() - pub_time)).total_seconds() > 2 * interval:
-                                # likely to be published before the program start
-                                # since it's too long time ago, simple ignore it
-                                dynamic_memory[id_str] = True
-                                logger.info(f"added dynamic {id_str} into memory, reason: {time_shift} > {2*interval}s")
-                                continue
+                            dynamic_id = int(id_str)
                         except Exception as e:
-                            logger.error("failed to check publish date: {e}")
+                            logger.error(f"failed to convert dynamic id {id_str} into int")
+                        else:
+                            match dynamic_type:=dynamic.get("type"):
+                                case "DYNAMIC_TYPE_LIVE_RCMD":
+                                    # live banner?
+                                    pass
+                                case "DYNAMIC_TYPE_AV":
+                                    # video
+                                    # dynamic["modules"]["module_dynamic"]["major"]["archive"] -> bvid, cover(http), title
+                                    parrot_prefix = f"{author_name}发布了视频：\n"
+                                    dn = Dynamic(dynamic_id, ctx.room.credential)
+                                case "DYNAMIC_TYPE_DRAW":
+                                    # some general types?
+                                    parrot_prefix = f"{author_name}发布了动态：\n"
+                                    # dynamic["modules"]["module_dynamic"]["major"]["opus"]["summary"]["rich_text_nodes or text"]
+                                    # dynamic["modules"]["module_dynamic"]["major"]["opus"]["pics"][?]["url"](http)
+                                    dn = Dynamic(dynamic_id, ctx.room.credential)
+                                case "DYNAMIC_TYPE_FORWARD":
+                                    # dynamic["modules"]["module_dynamic"]["desc"]["rich_text_nodes or text"]
+                                    # dynamic["orig"]["modules"]...
+                                    parrot_prefix = f"{author_name}转发了内容：\n"
+                                    dn = Dynamic(dynamic_id, ctx.room.credential)
+                                case _:
+                                    logger.info(f"unknown dynamic type {dynamic_type}")
+                                    logger.debug(jsonify(dynamic))
 
-                    # get author name
-                    author_name = dynamic.get("modules", {}).get("module_author", {}).get("name", "")
+                    if dn:
+                        await parrot_forward_dynamic(dn, parrot_prefix)
+                        await asyncio.sleep(cooldown)
+                        # marked the id_str on success
+                        dynamic_memory[id_str] = True
+                        logger.info(f"added dynamic {id_str} into memory, reason: forward success")
 
-                    try:
-                        dynamic_id = int(id_str)
-                    except Exception as e:
-                        logger.error(f"failed to convert dynamic id {id_str} into int")
-                    else:
-                        match dynamic_type:=dynamic.get("type"):
-                            case "DYNAMIC_TYPE_LIVE_RCMD":
-                                # live banner?
-                                pass
-                            case "DYNAMIC_TYPE_AV":
-                                # video
-                                # dynamic["modules"]["module_dynamic"]["major"]["archive"] -> bvid, cover(http), title
-                                parrot_prefix = f"{author_name}发布了视频：\n"
-                                dn = Dynamic(dynamic_id, ctx.room.credential)
-                            case "DYNAMIC_TYPE_DRAW":
-                                # some general types?
-                                parrot_prefix = f"{author_name}发布了动态：\n"
-                                # dynamic["modules"]["module_dynamic"]["major"]["opus"]["summary"]["rich_text_nodes or text"]
-                                # dynamic["modules"]["module_dynamic"]["major"]["opus"]["pics"][?]["url"](http)
-                                dn = Dynamic(dynamic_id, ctx.room.credential)
-                            case "DYNAMIC_TYPE_FORWARD":
-                                # dynamic["modules"]["module_dynamic"]["desc"]["rich_text_nodes or text"]
-                                # dynamic["orig"]["modules"]...
-                                parrot_prefix = f"{author_name}转发了内容：\n"
-                                dn = Dynamic(dynamic_id, ctx.room.credential)
-                            case _:
-                                logger.info(f"unknown dynamic type {dynamic_type}")
-                                logger.debug(jsonify(dynamic))
-
-                if dn:
-                    await parrot_forward_dynamic(dn, parrot_prefix)
-                    await asyncio.sleep(cooldown)
-                    # marked the id_str on success
-                    dynamic_memory[id_str] = True
-                    logger.info(f"added dynamic {id_str} into memory, reason: forward success")
-
-        except Exception as e:
-            logger.error(f"failed to fetch new dynamics: {e}")
+            except Exception as e:
+                logger.error(f"failed to fetch new dynamics: {e}")
+            finally:
+                await asyncio.sleep(cooldown)
 
 
 
