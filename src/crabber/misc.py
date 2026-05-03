@@ -1,7 +1,11 @@
 import json
+import logging
 
 from datetime import timedelta
 from decimal import Decimal
+from typing import Any, Sequence
+
+from crabber.logging import logger as default_logger
 
 
 def jsonify(obj: dict, indent: int=2, ensure_ascii: bool=False) -> str:
@@ -28,6 +32,12 @@ def format_timedelta(td: timedelta) -> str:
         parts.append(f"{minutes}分")
 
     return "".join(parts) if parts else "少于1分钟"
+
+
+def check_exceptions(results: Sequence[Any], msg: str="error", logger: logging.Logger=default_logger, exc_info: bool=False) -> None:
+    for res in results:
+        if isinstance(res, Exception):
+            logger.error(f"{msg}: {res}", exc_info=res if exc_info else False)
 
 
 def safe_ts(ts: float | int) -> float:

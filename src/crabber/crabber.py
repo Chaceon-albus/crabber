@@ -14,7 +14,7 @@ from bilibili_api.live import LiveRoom, LiveDanmaku
 from crabber.logging import logger
 from crabber.credential import CredentialManager
 from crabber.room_info import RoomInfo
-from crabber.misc import jsonify, safe_ts
+from crabber.misc import jsonify, safe_ts, check_exceptions
 from crabber.database import Database
 from crabber.live_stream import LiveStream, StreamStatus
 from crabber.services import BaseService, init_services
@@ -273,32 +273,36 @@ class Crabber:
 
 
     async def _on_room_online(self) -> None:
-        for callback in self.online_callbacks:
-            try:
-                await callback(self.room_info)
-            except Exception as e:
-                self.logger.exception(f"failed on online callback: {e}")
+        if not self.online_callbacks: return
+        results = await asyncio.gather(
+            *[callback(self.room_info) for callback in self.online_callbacks],
+            return_exceptions=True,
+        )
+        check_exceptions(results, msg="failed on online callback", logger=self.logger)
 
     async def _on_room_offline(self) -> None:
-        for callback in self.offline_callbacks:
-            try:
-                await callback(self.room_info)
-            except Exception as e:
-                self.logger.exception(f"failed on offline callback: {e}")
+        if not self.offline_callbacks: return
+        results = await asyncio.gather(
+            *[callback(self.room_info) for callback in self.offline_callbacks],
+            return_exceptions=True,
+        )
+        check_exceptions(results, msg="failed on offline callback", logger=self.logger)
 
     async def _on_room_streaming(self) -> None:
-        for callback in self.streaming_callbacks:
-            try:
-                await callback(self.room_info)
-            except Exception as e:
-                self.logger.exception(f"failed on streaming callback: {e}")
+        if not self.streaming_callbacks: return
+        results = await asyncio.gather(
+            *[callback(self.room_info) for callback in self.streaming_callbacks],
+            return_exceptions=True,
+        )
+        check_exceptions(results, msg="failed on streaming callback", logger=self.logger)
 
     async def _on_room_change(self) -> None:
-        for callback in self.room_change_callbacks:
-            try:
-                await callback(self.room_info)
-            except Exception as e:
-                self.logger.exception(f"failed on room change callback: {e}")
+        if not self.room_change_callbacks: return
+        results = await asyncio.gather(
+            *[callback(self.room_info) for callback in self.room_change_callbacks],
+            return_exceptions=True,
+        )
+        check_exceptions(results, msg="failed on room change callback", logger=self.logger)
 
     def _get_live_status_handler(self) -> Callable[[dict], asyncio._CoroutineLike]:
 
