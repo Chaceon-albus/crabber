@@ -6,6 +6,7 @@ from typing import Callable, Awaitable
 from apscheduler.triggers.interval import IntervalTrigger
 from bilibili_api.dynamic import Dynamic
 from bilibili_api.user import User
+from bilibili_api.video import Video
 
 from crabber.crabber import Crabber
 from crabber.services import NapCatService
@@ -19,7 +20,7 @@ default_events = []
 
 def get_handler(
     ctx: Crabber,
-    extra_uids: list[int] = [],
+    extra_uids: list[int] = [], favlists: list[int] = [],
     groups: list[int] = [], users: list[int] = [],
     interval: int = 600, cooldown: int = 5,
     *args, **kwargs,
@@ -31,13 +32,6 @@ def get_handler(
 
 
     async def parrot_forward_dynamic(dn: Dynamic, prefix: str="") -> None:
-        try:
-            if dn.credential.has_sessdata():
-                await dn.set_like(status=True) # why not
-        except Exception as e:
-            logger.info(f"failed to set like for dynamic {dn.get_dynamic_id()}: {e}")
-        else:
-            await asyncio.sleep(1)
 
         s = ctx.services.get("napcat")
         napcat = s if isinstance(s, NapCatService) else None
@@ -74,6 +68,9 @@ def get_handler(
             logger.debug(f"sending {content}")
             await napcat.send_msg_concurrently(content, groups, users)
             logger.info(f"success to forward dynamic {dn.get_dynamic_id()} to group {groups} and user {users}")
+
+        if dn.credential.has_sessdata():
+            await parrot_post_process_noexcept(dn, item)
 
 
     async def parrot_fetch_dynamic() -> None:
@@ -162,6 +159,31 @@ def get_handler(
             finally:
                 await asyncio.sleep(cooldown)
 
+
+    async def parrot_post_process_noexcept(dn: Dynamic, item: dict) -> None:
+
+        # set like
+        try:
+            await dn.set_like(status=True) # why not
+        except Exception as e:
+            logger.info(f"failed to set like for dynamic {dn.get_dynamic_id()}: {e}")
+        else:
+            await asyncio.sleep(1)
+
+        # try to pay a coin
+        try:
+            bvid = item.get("modules", {}).get("module_dynamic", {}).get("major", {}).get("archive", {}).get("bvid", "")
+            if bvid:
+                v = Video(bvid, credential=dn.credential)
+                _ = await asyncio.gather(
+                    v.pay_coin(1),
+                    v.set_favorite(add_media_ids=favlists),
+                    return_exceptions=True,
+                )
+        except Exception as e:
+            logger.info(f"failed to pay coin and set favorite: {e}")
+        else:
+            await asyncio.sleep(1)
 
 
     ctx.scheduler.add_job( # type: ignore
