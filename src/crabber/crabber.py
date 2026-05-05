@@ -49,6 +49,7 @@ class Crabber:
         self.streaming_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
         self.room_change_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
 
+        self._is_cleaned_up = False
         self._services_config = services
         self.services: dict[str, BaseService] = {} # key: type -> value: Service class
 
@@ -152,13 +153,12 @@ class Crabber:
             self.logger.error(e)
         finally:
             try:
-                if self.danmaku: self.loop.run_until_complete(self.danmaku.disconnect())
-                # self._clean_up_tasks()
+                self.loop.run_until_complete(self._shutdown())
             except Exception as e:
                 self.logger.error(f"error during cleanup: {e}")
             finally:
                 self.loop.close()
-                self.logger.debug(f"loop closed")
+                self.logger.debug(f"loop stopped")
 
 
     async def _bootstrap(self) -> None:
@@ -392,12 +392,49 @@ class Crabber:
 
 
     def stop(self) -> None:
-        for job in self.jobs: job.remove()
-        for task in self.tasks: task.cancel()
-        if self.scheduler and self.scheduler.running: self.scheduler.shutdown(wait=False)
         if self.loop and self.loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(self._shutdown(), self.loop)
+            try:
+                future.result(timeout=15)
+            except Exception as e:
+                self.logger.error(f"error during shutdown: {e}")
             self.loop.call_soon_threadsafe(self.loop.stop)
             self.logger.info(f"stopping crabber...")
+            self.thread.join(timeout=15)
+
+
+    async def _shutdown(self) -> None:
+        if self._is_cleaned_up: return
+        self._is_cleaned_up = True
+
+        for job in self.jobs:
+            try:
+                job.remove()
+            except Exception as e:
+                self.logger.debug(f"failed to remove job during shutdown: {e}")
+
+        self.jobs.clear()
+
+        if self.scheduler and self.scheduler.running:
+            self.scheduler.shutdown(wait=False)
+
+        for task in self.tasks:
+            task.cancel()
+
+        if self.tasks:
+            await asyncio.gather(*self.tasks, return_exceptions=True)
+            self.tasks.clear()
+
+        if self.room_info.stream:
+            await self.room_info.stream.close()
+
+        if self.danmaku:
+            await self.danmaku.disconnect()
+
+        service_close_tasks = [service.close() for service in self.services.values()]
+        if service_close_tasks:
+            results = await asyncio.gather(*service_close_tasks, return_exceptions=True)
+            check_exceptions(results, msg="failed to close service", logger=self.logger)
 
 
 if __name__ == "__main__":

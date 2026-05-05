@@ -54,3 +54,8 @@ class NtfyService(BaseService):
                 resp.raise_for_status()
         except Exception as e:
             self.logger.error(f"ntfy service failed to send notification: {e}")
+
+
+    async def close(self) -> None:
+        if not self.client.closed:
+            await self.client.close()

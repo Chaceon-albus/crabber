@@ -94,10 +94,10 @@ class LiveStream:
                 url_str = str(e.request_info.url) if e.request_info and e.request_info.url else "unknown url"
                 url_str = (url_str[:50] + "...") if len(url_str) > 50 else url_str
                 self.ctx.logger.warning(f"failed to download stream: {e.status} {e.message} ({url_str})")
-                if resp is not None: await resp.release()
+                if resp is not None: resp.release()
             except Exception as e:
                 self.ctx.logger.warning(f"failed to download stream: {e}")
-                if resp is not None: await resp.release()
+                if resp is not None: resp.release()
             else:
                 return resp
 
@@ -169,7 +169,7 @@ class LiveStream:
                         except Exception as e:
                             ctx.logger.error(f"error in live stream handler: {e}")
                         finally:
-                            if stream is not None: await stream.release()
+                            if stream is not None: stream.release()
 
                 finally:
                     self.dispatcher = None
@@ -208,7 +208,7 @@ class LiveStream:
 
         finally:
 
-            await stream.release()
+            stream.release()
 
             for q in list(self.subscribers):
                 try:
@@ -222,3 +222,14 @@ class LiveStream:
         self.status = StreamStatus.OFFLINE
         if self.dispatcher:
             self.dispatcher.cancel()
+
+
+    async def close(self) -> None:
+        self.stop()
+
+        if self.dispatcher:
+            await asyncio.gather(self.dispatcher, return_exceptions=True)
+            self.dispatcher = None
+
+        if self.client and not self.client.closed:
+            await self.client.close()

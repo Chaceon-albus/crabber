@@ -121,3 +121,8 @@ class NapCatService(BaseService):
             return await self._call(name, *args, **kwargs)
 
         return wrapper
+
+
+    async def close(self) -> None:
+        if not self.client.closed:
+            await self.client.close()
