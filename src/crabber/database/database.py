@@ -43,9 +43,9 @@ class Database(BaseAdapter):
             results = await asyncio.gather(*tasks, return_exceptions=True)
             self._check_results(results, "record gift")
 
-    async def record_danmaku(self, room_id: int, user: str, uid: int, content: str, timestamp: datetime):
+    async def record_danmaku(self, room_id: int, user: str, uid: int, content: str, timestamp: datetime, mode: int=1, color: int=16777215):
         tasks = [
-            adapter.record_danmaku(room_id, user, uid, content, timestamp)
+            adapter.record_danmaku(room_id, user, uid, content, timestamp, mode, color)
             for adapter in self.adapters
         ]
         if tasks:

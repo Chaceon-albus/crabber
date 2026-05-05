@@ -23,6 +23,8 @@ class DanmakuRecord(models.Model):
     uid = fields.IntField(default=-1)
     content = fields.CharField(max_length=1024)
     timestamp = fields.IntField()
+    mode = fields.IntField(default=1)
+    color = fields.IntField(default=16777215)
 
     class Meta(models.Model.Meta):
         table = "danmaku_record"

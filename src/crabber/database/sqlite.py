@@ -36,6 +36,8 @@ class SqliteAdapter(BaseAdapter):
                     _enable_global_fallback=True, # share global context
                 )
                 await Tortoise.generate_schemas(safe=True)
+
+                await self._run_migrations()
             else:
                 self.logger.debug("tortoise already initialized, skipping init")
 
@@ -48,11 +50,11 @@ class SqliteAdapter(BaseAdapter):
                 room_id=room_id, user=user, uid=uid, gift=gift, num=num, total_value=total_value.quantize(Decimal("0.00")), comment=comment, timestamp=int(timestamp.timestamp())
             )
 
-    async def record_danmaku(self, room_id: int, user: str, uid: int, content: str, timestamp: datetime):
+    async def record_danmaku(self, room_id: int, user: str, uid: int, content: str, timestamp: datetime, mode: int = 1, color: int = 16777215):
         await self._ensure_init()
         async with self._write_lock:
             await DanmakuRecord.create(
-                room_id=room_id, user=user, uid=uid, content=content, timestamp=int(timestamp.timestamp())
+                room_id=room_id, user=user, uid=uid, content=content, timestamp=int(timestamp.timestamp()), mode=mode, color=color
             )
 
     async def record_stats(self, room_id: int, title: str, area: str, cover_url: str, start_time: datetime, end_time: datetime, offline_gift_revenue: Decimal, offline_guard_revenue: Decimal, offline_sc_revenue: Decimal, gift_revenue: Decimal, guard_revenue: Decimal, sc_revenue: Decimal, summary: str, details: Dict[str, Any]):
@@ -74,3 +76,21 @@ class SqliteAdapter(BaseAdapter):
                 gift_revenue=gift_revenue.quantize(Decimal("0.00")), guard_revenue=guard_revenue.quantize(Decimal("0.00")), sc_revenue=sc_revenue.quantize(Decimal("0.00")),
                 summary=summary, details=details
             )
+
+
+    async def _run_migrations(self):
+        """
+        Run database migrations after Tortoise initialization.
+        """
+
+        conn = Tortoise.get_connection("default")
+
+        # 2026-05-04: Added `mode` and `color` columns to `danmaku_record`.
+        try:
+            await conn.execute_query("ALTER TABLE danmaku_record ADD COLUMN mode INT DEFAULT 1;")
+        except Exception:
+            pass
+        try:
+            await conn.execute_query("ALTER TABLE danmaku_record ADD COLUMN color INT DEFAULT 16777215;")
+        except Exception:
+            pass

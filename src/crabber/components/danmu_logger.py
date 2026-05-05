@@ -33,7 +33,9 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                     user=usr,
                     uid=uid,
                     content=msg,
-                    timestamp=datetime.now()
+                    timestamp=datetime.now(),
+                    mode=info[0][1], # 1: normal, 4: bottom, others TBD
+                    color=info[0][3], # Decimal of color
                 )
 
         else:

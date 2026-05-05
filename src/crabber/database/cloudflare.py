@@ -44,13 +44,13 @@ class CloudflareD1Adapter(BaseAdapter):
         async with self._write_lock:
             await self._execute_sql(sql, params)
 
-    async def record_danmaku(self, room_id: int, user: str, uid: int, content: str, timestamp: datetime):
+    async def record_danmaku(self, room_id: int, user: str, uid: int, content: str, timestamp: datetime, mode: int = 1, color: int = 16777215):
         sql = """
             INSERT INTO danmaku_record
-            (room_id, user, uid, content, timestamp)
-            VALUES (?, ?, ?, ?, ?)
+            (room_id, user, uid, content, timestamp, mode, color)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """
-        params = [room_id, user, uid, content, int(timestamp.timestamp())]
+        params = [room_id, user, uid, content, int(timestamp.timestamp()), mode, color]
 
         async with self._write_lock:
             await self._execute_sql(sql, params)
