@@ -90,7 +90,7 @@ def get_handler(
             return
 
         for uid in uids:
-            logger.info(f"fetching dynamics for uid = {uid}")
+            logger.debug(f"fetching dynamics for uid = {uid}")
             try:
                 resp = await User(uid, ctx.room.credential).get_dynamics_new()
                 dynamics = resp.get("items", [])
