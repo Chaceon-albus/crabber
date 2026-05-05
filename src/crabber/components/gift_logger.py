@@ -41,8 +41,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                 num = data.get("num", 1)
                 price = data.get("price", 0)
 
-                coin = data.get("total_coin", price * num)
-                value_in_cny = coin_to_cny(coin)
+                value_in_cny = coin_to_cny(price * num)
 
                 gift_revenue += value_in_cny
                 logger.info(f"{user} {action}了 {gift_name}×{num}，价值￥{value_in_cny:.2f}")
