@@ -91,9 +91,12 @@ class LiveStream:
                 resp = await self.client.get(stream, timeout=timeout, ssl=False) # some cdn may have invalid ssl certs
                 resp.raise_for_status()
             except aiohttp.ClientResponseError as e:
-                url_str = str(e.request_info.url) if e.request_info and e.request_info.url else "unknown url"
-                url_str = (url_str[:50] + "...") if len(url_str) > 50 else url_str
-                self.ctx.logger.warning(f"failed to download stream: {e.status} {e.message} ({url_str})")
+                # when the stream is not ready or accidentally stopped, resp got 404,
+                # retry silently in this case instead of throwing many warnings
+                if e.status not in [404]:
+                    url_str = str(e.request_info.url) if e.request_info and e.request_info.url else "unknown url"
+                    url_str = (url_str[:50] + "...") if len(url_str) > 50 else url_str
+                    self.ctx.logger.warning(f"failed to download stream: {e.status} {e.message} ({url_str})")
                 if resp is not None: resp.release()
             except Exception as e:
                 self.ctx.logger.warning(f"failed to download stream: {e}")
@@ -118,6 +121,7 @@ class LiveStream:
 
                 last_retry_time = datetime.now()
                 failure_counter = 0
+                failure_flag = False
 
                 try:
                     while self.status != StreamStatus.OFFLINE:
@@ -156,13 +160,24 @@ class LiveStream:
 
                             if (stream_urls := await self.get_live_streams()):
                                 if (stream:=await self.download_stream(urls=stream_urls)) is not None:
+                                    # force status to be STREAMING since we got the stream successfully
                                     self.status = StreamStatus.STREAMING
-                                    failure_counter = 0 # reset failure counter on success
+                                    # reset failure counter & flag on success
+                                    failure_counter = 0
+                                    failure_flag = False
+                                    # start to dispatch the stream
                                     ctx.logger.debug(f"successfully start downloading live stream, start dispatching")
                                     await self._dispatch(stream)
+                                else:
+                                    # failed: no stream
+                                    failure_flag = True
                             else:
+                                # failed: no stream url
+                                failure_flag = True
+
+                            if failure_flag:
                                 failure_counter += 1
-                                if failure_counter > 3:
+                                if failure_counter > 2:
                                     # the stream may not be ready anymore, back to longer retry delay
                                     self.status = StreamStatus.ONLINE
 
