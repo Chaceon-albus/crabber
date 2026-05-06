@@ -356,7 +356,11 @@ class Crabber:
                     self.logger.debug(f"received ROOM_CHANGE event with data: {data}")
                     self.room_info.area = data.get("area_name", self.room_info.area)
                     self.room_info.title = data.get("title", self.room_info.title)
-                    await self._on_room_change()
+
+                    _ = await asyncio.gather(
+                        self._on_room_change(), # no exception
+                        self._update_room_info(), # no exception
+                    )
 
                 case "CHANGE_ROOM_INFO":
                     # relatively rare event, may be received when the streamer changes the cover
