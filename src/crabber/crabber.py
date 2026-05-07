@@ -3,7 +3,7 @@ import logging
 import threading
 
 from datetime import datetime
-from typing import Optional, Callable
+from typing import Awaitable, Optional, Callable
 
 import bilibili_api as biliapi
 
@@ -18,12 +18,20 @@ from crabber.misc import jsonify, safe_ts, check_exceptions
 from crabber.database import Database
 from crabber.live_stream import LiveStream, StreamStatus
 from crabber.services import BaseService, init_services
+from crabber.task_manager import TaskManager
 
 
 class Crabber:
 
 
-    def __init__(self, name: str, room_id: int, cred_manager: CredentialManager, database: list = [], services: list = []) -> None:
+    def __init__(
+        self,
+        name: str,
+        room_id: int,
+        cred_manager: CredentialManager,
+        database: list | None = None,
+        services: list | None = None,
+    ) -> None:
 
         self.logger = logger.getChild(f"({name})")
 
@@ -34,7 +42,7 @@ class Crabber:
         self.scheduler: Optional[AsyncIOScheduler] = None
         self.cred_manager = cred_manager
 
-        self._db_config = database
+        self._db_config = database or []
         self.db: Optional[Database] = None
 
         self.danmaku: Optional[biliapi.live.LiveDanmaku] = None
@@ -43,14 +51,14 @@ class Crabber:
         self.refresh_event: Optional[asyncio.Event] = None
 
         self.jobs: list[Job] = []
-        self.tasks: list[asyncio.Task] = []
+        self.task_manager = TaskManager(logger=self.logger)
         self.online_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
         self.offline_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
         self.streaming_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
         self.room_change_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
 
         self._is_cleaned_up = False
-        self._services_config = services
+        self._services_config = services or []
         self.services: dict[str, BaseService] = {} # key: type -> value: Service class
 
         self._is_ready = threading.Event()
@@ -100,15 +108,14 @@ class Crabber:
         return job
 
 
-    def add_task(self, coro: asyncio._CoroutineLike, *args, **kwargs) -> asyncio.Task:
+    def add_task(self, task: Awaitable | Callable, *args, **kwargs) -> asyncio.Task:
         if self.loop is None or not self.loop.is_running():
             raise RuntimeError("crabber is not ready to add task")
 
-        task = self.loop.create_task(coro, *args, **kwargs)
-        self.tasks.append(task)
+        scheduled_task = self.task_manager.go(task, *args, **kwargs)
 
-        self.logger.debug(f"added task {coro.__name__}")
-        return task
+        self.logger.debug(f"added task {scheduled_task.get_name()}")
+        return scheduled_task
 
 
     def add_online_callback(self, callback: Callable[[RoomInfo], asyncio._CoroutineLike]) -> None:
@@ -131,6 +138,7 @@ class Crabber:
 
     def _thread_entry(self) -> None:
         self.loop = asyncio.new_event_loop()
+        self.task_manager.bind(self.loop)
         asyncio.set_event_loop(self.loop)
 
         self.refresh_event = asyncio.Event()
@@ -418,12 +426,7 @@ class Crabber:
         if self.scheduler and self.scheduler.running:
             self.scheduler.shutdown(wait=False)
 
-        for task in self.tasks:
-            task.cancel()
-
-        if self.tasks:
-            await asyncio.gather(*self.tasks, return_exceptions=True)
-            self.tasks.clear()
+        await self.task_manager.close()
 
         if self.room_info.stream:
             await self.room_info.stream.close()
