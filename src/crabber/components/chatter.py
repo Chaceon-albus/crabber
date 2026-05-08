@@ -60,7 +60,12 @@ def get_handler(ctx: Crabber, on_live: dict = {}, on_cron: list[dict] = [], *arg
                 "time": now.strftime("%H:%M"),
                 "date": now.strftime("%Y/%m/%d"),
             }):
-                resp = await ctx.room.send_danmaku(Danmaku(msg_content), info.id)
+
+                if msg_content.startswith("[EMOTICON]"):
+                    resp = await ctx.room.send_emoticon(Danmaku(msg_content.lstrip("[EMOTICON]")), info.id)
+                else:
+                    resp = await ctx.room.send_danmaku(Danmaku(msg_content), info.id)
+
                 logger.info(f"sent danmaku: {msg_content}")
                 logger.debug(f"damaku server resp: {_danmaku_resp_brief(resp)}")
             else:

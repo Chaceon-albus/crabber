@@ -22,7 +22,10 @@
                 {
                     "type": "chatter",
                     "config": {
-                        "on_live": {"message": "欢迎xxxx！chatter组件只在开播中生效哦"},
+                        "on_live": {"message": [
+                            "欢迎xxxx！chatter组件只在开播中生效哦",
+                            "[EMOTICON]official_332"
+                        ]},
                         "on_cron": [
                             {
                                 "interval": {"minutes": 30, "seconds": 1},
