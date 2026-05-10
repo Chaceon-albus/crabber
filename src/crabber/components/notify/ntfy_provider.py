@@ -7,15 +7,17 @@ from crabber.services import NtfyService
 
 
 # let it crash if anything goes wrong, caller will handle it
-async def send_notify(ctx: Crabber, room: RoomInfo, config: dict = {}, logger: Logger = default_logger) -> None:
+async def send_notify(
+    ctx: Crabber,
+    room: RoomInfo,
+    config: dict | None = None,
+    logger: Logger = default_logger,
+) -> None:
 
-    s = ctx.services.get("ntfy", None)
+    config = config or {}
 
-    if not s or not isinstance(s, NtfyService):
-        logger.warning("ntfy service not found")
+    if (ntfy := ctx.get_service(NtfyService)) is None:
         return
-
-    ntfy: NtfyService = s
 
     name = config.get("name", "[notset]")
     topic = config.get("topic", "")

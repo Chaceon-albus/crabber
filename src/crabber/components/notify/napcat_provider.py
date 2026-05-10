@@ -1,5 +1,3 @@
-import asyncio
-
 from logging import Logger
 
 from crabber.crabber import Crabber
@@ -9,15 +7,17 @@ from crabber.services import NapCatService
 
 
 # let it crash if anything goes wrong, caller will handle it
-async def send_notify(ctx: Crabber, room: RoomInfo, config: dict = {}, logger: Logger = default_logger) -> None:
+async def send_notify(
+    ctx: Crabber,
+    room: RoomInfo,
+    config: dict | None = None,
+    logger: Logger = default_logger,
+) -> None:
 
-    s = ctx.services.get("napcat", None)
+    config = config or {}
 
-    if not s or not isinstance(s, NapCatService):
-        logger.warning("napcat service not found")
+    if (napcat := ctx.get_service(NapCatService)) is None:
         return
-
-    napcat: NapCatService = s
 
     content = (
         # no newline needed after [CQ:image]

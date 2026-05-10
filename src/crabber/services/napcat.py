@@ -2,12 +2,16 @@ import aiohttp
 import asyncio
 import logging
 
+from typing import ClassVar
+
 from crabber.misc import jsonify
 
 from .interface import BaseService
 
 
 class NapCatService(BaseService):
+
+    service_name: ClassVar[str] = "napcat"
 
     def __init__(self, config: dict, logger: logging.Logger) -> None:
         super().__init__()

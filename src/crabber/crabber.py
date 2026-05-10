@@ -3,7 +3,7 @@ import logging
 import threading
 
 from datetime import datetime
-from typing import Awaitable, Optional, Callable
+from typing import Awaitable, Callable, TypeVar
 
 import bilibili_api as biliapi
 
@@ -19,6 +19,9 @@ from crabber.database import Database
 from crabber.live_stream import LiveStream, StreamStatus
 from crabber.services import BaseService, init_services
 from crabber.task_manager import TaskManager
+
+
+TService = TypeVar("TService", bound=BaseService)
 
 
 class Crabber:
@@ -39,16 +42,16 @@ class Crabber:
         self.name = name
         self.room_id = room_id
         self.room_info = RoomInfo(id=room_id)
-        self.scheduler: Optional[AsyncIOScheduler] = None
+        self.scheduler: AsyncIOScheduler | None = None
         self.cred_manager = cred_manager
 
         self._db_config = database or []
-        self.db: Optional[Database] = None
+        self.db: Database | None = None
 
-        self.danmaku: Optional[biliapi.live.LiveDanmaku] = None
+        self.danmaku: biliapi.live.LiveDanmaku | None = None
 
-        self.loop: Optional[asyncio.AbstractEventLoop] = None
-        self.refresh_event: Optional[asyncio.Event] = None
+        self.loop: asyncio.AbstractEventLoop | None = None
+        self.refresh_event: asyncio.Event | None = None
 
         self.jobs: list[Job] = []
         self.task_manager = TaskManager(logger=self.logger)
@@ -116,6 +119,28 @@ class Crabber:
 
         self.logger.debug(f"added task {scheduled_task.get_name()}")
         return scheduled_task
+
+
+    def get_service(self, service_type: type[TService]) -> TService | None:
+        service_name = service_type.service_name
+
+        if not service_name:
+            self.logger.warning(f"{service_type.__name__} does not define service_name")
+            return None
+
+        service = self.services.get(service_name)
+
+        if service is None:
+            self.logger.warning(f"{service_name} service not found")
+            return None
+
+        if not isinstance(service, service_type):
+            self.logger.warning(
+                f"{service_name} service has unexpected type: {type(service).__name__}"
+            )
+            return None
+
+        return service
 
 
     def add_online_callback(self, callback: Callable[[RoomInfo], asyncio._CoroutineLike]) -> None:
@@ -385,7 +410,7 @@ class Crabber:
 
 
     @property
-    def room(self) -> Optional[LiveRoom]:
+    def room(self) -> LiveRoom | None:
         if self.danmaku is None: return None
         if self.danmaku.room is None:
             self.danmaku.room = LiveRoom(self.room_id, credential=self.cred_manager.credential)

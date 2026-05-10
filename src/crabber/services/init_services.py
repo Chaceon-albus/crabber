@@ -6,19 +6,25 @@ from .napcat import NapCatService
 from .ntfy import NtfyService
 
 
+SERVICE_TYPES: dict[str, type[BaseService]] = {
+    NapCatService.service_name: NapCatService,
+    NtfyService.service_name: NtfyService,
+}
+
+
 async def init_services(config: list, logger: logging.Logger = default_logger) -> dict[str, BaseService]:
 
     services = {}
 
     for sc in config:
         if isinstance(sc, dict):
-            match stype:=sc.get("type", ""):
-                case "napcat":
-                    services[stype] = NapCatService(sc.get("config", {}), logger)
-                case "ntfy":
-                    services[stype] = NtfyService(sc.get("config", {}), logger)
-                case _:
-                    logger.warning(f"unknown service type {stype}")
+            stype = sc.get("type", "")
+            service_type = SERVICE_TYPES.get(stype)
+
+            if service_type:
+                services[stype] = service_type(sc.get("config", {}), logger)
+            else:
+                logger.warning(f"unknown service type {stype}")
         else:
             logger.warning(f"service config wants a dict but got {type(sc)}")
 

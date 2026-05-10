@@ -1,7 +1,13 @@
 import logging
+from typing import ClassVar
+
+from .interface import BaseService
 
 
-class NapCatService:
+class NapCatService(BaseService):
+
+    service_name: ClassVar[str]
+
     def __init__(self,config: dict, logger: logging.Logger) -> None: ...
     async def send_private_msg(self, user_id: str, message: str | list[dict]) -> dict: ...
     async def send_msg(self, message_type: str, message: str | list[dict], group_id: str | None = None, user_id: str | None = None) -> dict: ...

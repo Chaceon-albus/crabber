@@ -20,8 +20,8 @@ default_events = []
 
 def get_handler(
     ctx: Crabber,
-    extra_uids: list[int] = [], favlists: list[int] = [],
-    groups: list[int] = [], users: list[int] = [],
+    extra_uids: list[int] | None = None, favlists: list[int] | None = None,
+    groups: list[int] | None = None, users: list[int] | None = None,
     interval: int = 600, cooldown: int = 5,
     *args, **kwargs,
 ) -> Callable[[dict], Awaitable[None]]:
@@ -30,14 +30,14 @@ def get_handler(
     logger = ctx.logger
     dynamic_memory = {}
 
+    extra_uids = extra_uids or []
+    favlists = favlists or []
+    groups = groups or []
+    users = users or []
 
     async def parrot_forward_dynamic(dn: Dynamic, prefix: str="") -> None:
 
-        s = ctx.services.get("napcat")
-        napcat = s if isinstance(s, NapCatService) else None
-
-        if not napcat:
-            logger.warning("napcat not found, skip")
+        if (napcat := ctx.get_service(NapCatService)) is None:
             return
 
         try:

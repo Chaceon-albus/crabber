@@ -1,12 +1,14 @@
 import aiohttp
 import logging
 
+from typing import ClassVar
+
 from .interface import BaseService
 
 
 class NtfyService(BaseService):
 
-    service_name = "ntfy"
+    service_name: ClassVar[str] = "ntfy"
 
     def __init__(self, config: dict, logger: logging.Logger) -> None:
         super().__init__()
