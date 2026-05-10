@@ -4,8 +4,6 @@ import os
 import threading
 
 from datetime import datetime
-from typing import Optional
-
 import aiofiles
 import bilibili_api as biliapi
 
@@ -31,7 +29,7 @@ class CredentialManager:
             cred_json = {}
             logger.warning("no credential file provided or file does not exist, using empty credential")
 
-        self.credential: Optional[biliapi.Credential] = None
+        self.credential: biliapi.Credential | None = None
 
         self._interval = interval
         self._lock = threading.Lock()

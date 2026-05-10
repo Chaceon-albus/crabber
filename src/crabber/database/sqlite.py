@@ -3,7 +3,7 @@ import logging
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 
 from tortoise import Tortoise
 
@@ -43,7 +43,7 @@ class SqliteAdapter(BaseAdapter):
 
             self._initialized = True
 
-    async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, total_value: Decimal, comment: Optional[str], timestamp: datetime):
+    async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, total_value: Decimal, comment: str | None, timestamp: datetime):
         await self._ensure_init()
         async with self._write_lock:
             await GiftRecord.create(

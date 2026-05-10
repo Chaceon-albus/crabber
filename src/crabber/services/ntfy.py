@@ -6,6 +6,7 @@ from .interface import BaseService
 
 class NtfyService(BaseService):
 
+    service_name = "ntfy"
 
     def __init__(self, config: dict, logger: logging.Logger) -> None:
         super().__init__()
@@ -26,7 +27,17 @@ class NtfyService(BaseService):
         )
 
 
-    async def send_notify(self, topic: str, title: str, message: str, priority: int = 3, attach: str = "", actions: list = []) -> None:
+    async def send_notify(
+        self,
+        topic: str,
+        title: str,
+        message: str,
+        priority: int = 3,
+        attach: str = "",
+        actions: list | None = None,
+    ) -> None:
+
+        actions = actions or []
 
         if not self.endpoint:
             self.logger.warning("ntfy service endpoint not configured, skipping notify")

@@ -5,7 +5,7 @@ import asyncio
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Callable, Optional, TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 
 
 if TYPE_CHECKING:
@@ -28,8 +28,8 @@ class LiveStream:
         self.ctx.add_streaming_callback(streaming_handler)
 
         self.status = StreamStatus.OFFLINE
-        self.client: Optional[aiohttp.ClientSession] = None
-        self.dispatcher: Optional[asyncio.Task] = None
+        self.client: aiohttp.ClientSession | None = None
+        self.dispatcher: asyncio.Task | None = None
         self.subscribers: list[asyncio.Queue] = []
 
 
@@ -46,7 +46,7 @@ class LiveStream:
         return urls
 
 
-    def subscribe(self, q: Optional[asyncio.Queue] = None) -> asyncio.Queue:
+    def subscribe(self, q: asyncio.Queue | None = None) -> asyncio.Queue:
         q = asyncio.Queue(maxsize=128) if q is None else q # ~64KB * 128 = 8MB of buffer
         self.subscribers.append(q)
         return q
@@ -64,7 +64,11 @@ class LiveStream:
             self.ctx.logger.error(f"failed to notify subscriber: {e}")
 
 
-    async def download_stream(self, urls: Optional[list[str]] = None, timeout: Optional[aiohttp.ClientTimeout] = None) -> Optional[aiohttp.ClientResponse]:
+    async def download_stream(
+        self,
+        urls: list[str] | None = None,
+        timeout: aiohttp.ClientTimeout | None = None,
+    ) -> aiohttp.ClientResponse | None:
 
         streams = urls if urls is not None else await self.get_live_streams()
         timeout = timeout or aiohttp.ClientTimeout(

@@ -20,10 +20,19 @@ from crabber.components import empty_handler
 default_events = []
 
 
-def get_handler(ctx: Crabber, on_live: dict = {}, on_cron: list[dict] = [], *args, **kwargs) -> Callable[[dict], Awaitable[None]]:
+def get_handler(
+    ctx: Crabber,
+    on_live: dict | None = None,
+    on_cron: list[dict] | None = None,
+    *args,
+    **kwargs,
+) -> Callable[[dict], Awaitable[None]]:
 
     logger = ctx.logger
     _init_time = time.monotonic()
+
+    on_live = on_live or {}
+    on_cron = on_cron or []
 
     welcome_msg = MessageSelector(on_live.get("message", ""), on_live.get("random", False))
 

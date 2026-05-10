@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 from crabber.live_stream import LiveStream
 
@@ -17,7 +16,7 @@ class RoomInfo:
     start_time: datetime = datetime.now()
     end_time: datetime = datetime.now()
 
-    stream: Optional[LiveStream] = None
+    stream: LiveStream | None = None
 
 
 if __name__ == "__main__":

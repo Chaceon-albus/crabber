@@ -5,7 +5,7 @@ import aiofiles
 from datetime import datetime
 from pathlib import Path
 from string import Template
-from typing import Callable, Awaitable, Optional
+from typing import Callable, Awaitable
 
 from aiofiles.threadpool.binary import AsyncBufferedIOBase
 
@@ -33,7 +33,7 @@ def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) ->
         queue = asyncio.Queue(maxsize=128)
         ctx.room_info.stream.subscribe(queue)  # type: ignore
 
-        fp: Optional[AsyncBufferedIOBase] = None
+        fp: AsyncBufferedIOBase | None = None
         while True:
             try:
                 data: bytes | None = await queue.get()
