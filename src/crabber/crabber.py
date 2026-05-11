@@ -147,7 +147,6 @@ class Crabber:
         self.online_callbacks.append(callback)
         self.logger.debug(f"added online callback: {callback.__name__}")
 
-
     def add_offline_callback(self, callback: Callable[[RoomInfo], asyncio._CoroutineLike]) -> None:
         self.offline_callbacks.append(callback)
         self.logger.debug(f"added offline callback: {callback.__name__}")
@@ -211,6 +210,8 @@ class Crabber:
         self.danmaku.logger.setLevel(logging.INFO)
 
         self.room_info.stream = LiveStream(ctx=self)
+
+        await self._update_room_info() # update room_info once before self.start()
 
         self.add_task(self._listen_refresh_events())  # listen for credential refresh events in the background
         self.add_task(self._keep_danmaku_connected()) # run danmaku connection in the background
@@ -424,6 +425,7 @@ class Crabber:
 
     def start(self) -> None:
         if self.room_info.is_online and self.loop and self.loop.is_running():
+            self.logger.info("room is online before the program start")
             asyncio.run_coroutine_threadsafe(self._on_room_online(), self.loop)
             asyncio.run_coroutine_threadsafe(self._on_room_streaming(), self.loop) # assume that it's streaming
 
