@@ -110,7 +110,7 @@ def get_handler(
                                     # likely to be published before the program start
                                     # since it's too long time ago, simple ignore it
                                     dynamic_memory[id_str] = True
-                                    logger.info(f"added dynamic {id_str} into memory, reason: {time_shift} > {2*interval}s")
+                                    logger.debug(f"added dynamic {id_str} into memory, reason: {time_shift} > {2*interval}s")
                                     continue
                             except Exception as e:
                                 logger.error("failed to check publish date: {e}")
@@ -152,7 +152,7 @@ def get_handler(
                         await asyncio.sleep(cooldown)
                         # marked the id_str on success
                         dynamic_memory[id_str] = True
-                        logger.info(f"added dynamic {id_str} into memory, reason: forward success")
+                        logger.debug(f"added dynamic {id_str} into memory, reason: forward success")
 
             except Exception as e:
                 logger.error(f"failed to fetch new dynamics: {e}")
