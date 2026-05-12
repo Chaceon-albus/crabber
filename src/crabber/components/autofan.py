@@ -64,6 +64,7 @@ def get_handler(ctx: Crabber, gift_num: int = 1, *args, **kwargs) -> Callable[[d
 
 
     async def autofan_online(info: RoomInfo) -> None:
+        nonlocal autofan_job
 
         if not ctx.scheduler:
             logger.error("scheduler not initialized, skip")
@@ -77,7 +78,6 @@ def get_handler(ctx: Crabber, gift_num: int = 1, *args, **kwargs) -> Callable[[d
             await _send_popular_ticket_noexcept()
 
         if autofan_job is None:
-            nonlocal autofan_job
             autofan_job = ctx.scheduler.add_job(
                 func=_send_popular_ticket_noexcept,
                 trigger=CronTrigger.from_crontab("1 * * * *"),
