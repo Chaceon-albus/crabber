@@ -164,8 +164,6 @@ class LiveStream:
 
                             if (stream_urls := await self.get_live_streams()):
                                 if (stream:=await self.download_stream(urls=stream_urls)) is not None:
-                                    # force status to be STREAMING since we got the stream successfully
-                                    self.status = StreamStatus.STREAMING
                                     # reset failure counter & flag on success
                                     failure_counter = 0
                                     failure_flag = False
@@ -181,9 +179,6 @@ class LiveStream:
 
                             if failure_flag:
                                 failure_counter += 1
-                                if failure_counter > 2:
-                                    # the stream may not be ready anymore, back to longer retry delay
-                                    self.status = StreamStatus.ONLINE
 
                         except Exception as e:
                             ctx.logger.error(f"error in live stream handler: {e}")
