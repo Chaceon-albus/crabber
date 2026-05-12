@@ -3,9 +3,12 @@ import logging
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Any
+from typing import Any
 
-from tortoise import Tortoise
+from sqlalchemy import inspect, text
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlmodel import SQLModel, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from crabber.database.interface import BaseAdapter
 from crabber.database.records import GiftRecord, DanmakuRecord, LiveRecord
@@ -18,6 +21,7 @@ class SqliteAdapter(BaseAdapter):
         self.logger = logger
         self.path = config.get("path", "crabberDB.sqlite")
         self._write_lock = asyncio.Lock()
+        self._engine = None
         self._initialized = False
 
     async def _ensure_init(self):
@@ -28,101 +32,129 @@ class SqliteAdapter(BaseAdapter):
             if self._initialized:
                 return
 
-            if not Tortoise._inited:
-                self.logger.debug(f"initializing tortoise with {self.path}")
-                await Tortoise.init(
-                    db_url=f"sqlite://{self.path}",
-                    modules={"models": ["crabber.database.records"]},
-                    _enable_global_fallback=True, # share global context
-                )
-                await Tortoise.generate_schemas(safe=True)
-
-                await self._run_migrations()
-            else:
-                self.logger.debug("tortoise already initialized, skipping init")
+            self.logger.debug(f"initializing sqlmodel with {self.path}")
+            self._engine = create_async_engine(f"sqlite+aiosqlite:///{self.path}")
+            
+            async with self._engine.begin() as conn:
+                await conn.run_sync(SQLModel.metadata.create_all)
+                await self._run_migrations(conn)
 
             self._initialized = True
 
     async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, total_value: Decimal, comment: str | None, timestamp: datetime):
         await self._ensure_init()
-        async with self._write_lock:
-            await GiftRecord.create(
-                room_id=room_id, user=user, uid=uid, gift=gift, num=num, total_value=total_value.quantize(Decimal("0.00")), comment=comment, timestamp=int(timestamp.timestamp())
+        async with AsyncSession(self._engine) as session:
+            record = GiftRecord(
+                room_id=room_id, user=user, uid=uid, gift=gift, num=num,
+                total_value=total_value.quantize(Decimal("0.00")),
+                comment=comment or "", timestamp=int(timestamp.timestamp())
             )
+            session.add(record)
+            await session.commit()
 
     async def record_danmaku(self, room_id: int, user: str, uid: int, content: str, timestamp: datetime, mode: int = 1, color: int = 16777215):
         await self._ensure_init()
-        async with self._write_lock:
-            await DanmakuRecord.create(
-                room_id=room_id, user=user, uid=uid, content=content, timestamp=int(timestamp.timestamp()), mode=mode, color=color
+        async with AsyncSession(self._engine) as session:
+            record = DanmakuRecord(
+                room_id=room_id, user=user, uid=uid, content=content,
+                timestamp=int(timestamp.timestamp()), mode=mode, color=color
             )
+            session.add(record)
+            await session.commit()
 
-    async def record_stats(self, room_id: int, title: str, area: str, cover_url: str, start_time: datetime, end_time: datetime, offline_gift_revenue: Decimal, offline_guard_revenue: Decimal, offline_sc_revenue: Decimal, gift_revenue: Decimal, guard_revenue: Decimal, sc_revenue: Decimal, summary: str, details: Dict[str, Any]):
+    async def record_stats(self, room_id: int, title: str, area: str, cover_url: str, start_time: datetime, end_time: datetime, offline_gift_revenue: Decimal, offline_guard_revenue: Decimal, offline_sc_revenue: Decimal, gift_revenue: Decimal, guard_revenue: Decimal, sc_revenue: Decimal, summary: str, details: dict[str, Any]):
         await self._ensure_init()
-        async with self._write_lock:
-            existing = await LiveRecord.filter(room_id=room_id, start_time=int(start_time.timestamp())).first()
+        async with AsyncSession(self._engine) as session:
+            statement = select(LiveRecord).where(
+                LiveRecord.room_id == room_id,
+                LiveRecord.start_time == int(start_time.timestamp())
+            )
+            existing = (await session.exec(statement)).first()
             if not existing:
-                await LiveRecord.create(
+                record = LiveRecord(
                     room_id=room_id, title=title, area=area, cover_url=cover_url,
                     start_time=int(start_time.timestamp()), end_time=int(end_time.timestamp()),
-                    offline_gift_revenue=offline_gift_revenue.quantize(Decimal("0.00")), offline_guard_revenue=offline_guard_revenue.quantize(Decimal("0.00")), offline_sc_revenue=offline_sc_revenue.quantize(Decimal("0.00")),
-                    gift_revenue=gift_revenue.quantize(Decimal("0.00")), guard_revenue=guard_revenue.quantize(Decimal("0.00")), sc_revenue=sc_revenue.quantize(Decimal("0.00")),
+                    offline_gift_revenue=offline_gift_revenue.quantize(Decimal("0.00")),
+                    offline_guard_revenue=offline_guard_revenue.quantize(Decimal("0.00")),
+                    offline_sc_revenue=offline_sc_revenue.quantize(Decimal("0.00")),
+                    gift_revenue=gift_revenue.quantize(Decimal("0.00")),
+                    guard_revenue=guard_revenue.quantize(Decimal("0.00")),
+                    sc_revenue=sc_revenue.quantize(Decimal("0.00")),
                     summary=summary, details=details
                 )
+                session.add(record)
+                await session.commit()
 
-    async def update_stats(self, room_id: int, start_time: datetime, end_time: datetime, gift_revenue: Decimal, guard_revenue: Decimal, sc_revenue: Decimal, summary: str, details: Dict[str, Any]):
+    async def update_stats(self, room_id: int, start_time: datetime, end_time: datetime, gift_revenue: Decimal, guard_revenue: Decimal, sc_revenue: Decimal, summary: str, details: dict[str, Any]):
         await self._ensure_init()
-        async with self._write_lock:
-            await LiveRecord.filter(room_id=room_id, start_time=int(start_time.timestamp())).update(
-                end_time=int(end_time.timestamp()),
-                gift_revenue=gift_revenue.quantize(Decimal("0.00")), guard_revenue=guard_revenue.quantize(Decimal("0.00")), sc_revenue=sc_revenue.quantize(Decimal("0.00")),
-                summary=summary, details=details
+        async with AsyncSession(self._engine) as session:
+            statement = select(LiveRecord).where(
+                LiveRecord.room_id == room_id,
+                LiveRecord.start_time == int(start_time.timestamp())
             )
+            record = (await session.exec(statement)).first()
+            if record:
+                record.end_time = int(end_time.timestamp())
+                record.gift_revenue = gift_revenue.quantize(Decimal("0.00"))
+                record.guard_revenue = guard_revenue.quantize(Decimal("0.00"))
+                record.sc_revenue = sc_revenue.quantize(Decimal("0.00"))
+                record.summary = summary
+                record.details = details
+                session.add(record)
+                await session.commit()
 
-    async def get_latest_live_record(self, room_id: int) -> Dict[str, Any] | None:
+    async def get_latest_live_record(self, room_id: int) -> dict[str, Any] | None:
         await self._ensure_init()
-        record = await LiveRecord.filter(room_id=room_id).order_by("-start_time").first()
-        if record:
-            return {
-                "room_id": record.room_id,
-                "start_time": datetime.fromtimestamp(record.start_time),
-                "end_time": datetime.fromtimestamp(record.end_time),
-            }
+        async with AsyncSession(self._engine) as session:
+            statement = select(LiveRecord).where(LiveRecord.room_id == room_id).order_by(LiveRecord.start_time.desc()).limit(1)
+            record = (await session.exec(statement)).first()
+            if record:
+                return {
+                    "room_id": record.room_id,
+                    "start_time": datetime.fromtimestamp(record.start_time),
+                    "end_time": datetime.fromtimestamp(record.end_time),
+                }
         return None
 
-    async def get_gift_summary(self, room_id: int, start_timestamp: datetime) -> Dict[str, Decimal]:
+    async def get_gift_summary(self, room_id: int, start_timestamp: datetime) -> dict[str, Decimal]:
         await self._ensure_init()
-        gifts = await GiftRecord.filter(room_id=room_id, timestamp__gte=int(start_timestamp.timestamp()))
-        summary = {
-            "gift_revenue": Decimal("0.00"),
-            "guard_revenue": Decimal("0.00"),
-            "sc_revenue": Decimal("0.00")
-        }
-        for g in gifts:
-            val = Decimal(g.total_value)
-            if g.gift == "SuperChat":
-                summary["sc_revenue"] += val
-            elif g.gift in ["舰长", "提督", "总督"]:
-                summary["guard_revenue"] += val
-            else:
-                summary["gift_revenue"] += val
-        
-        return summary
+        async with AsyncSession(self._engine) as session:
+            statement = select(GiftRecord.gift, GiftRecord.total_value).where(
+                GiftRecord.room_id == room_id,
+                GiftRecord.timestamp >= int(start_timestamp.timestamp())
+            )
+            results = (await session.exec(statement)).all()
+            
+            summary = {
+                "gift_revenue": Decimal("0.00"),
+                "guard_revenue": Decimal("0.00"),
+                "sc_revenue": Decimal("0.00")
+            }
+            for gift, total_value in results:
+                val = Decimal(total_value)
+                if gift == "SuperChat":
+                    summary["sc_revenue"] += val
+                elif gift in ["舰长", "提督", "总督"]:
+                    summary["guard_revenue"] += val
+                else:
+                    summary["gift_revenue"] += val
+            
+            return summary
 
-
-    async def _run_migrations(self):
+    async def _run_migrations(self, conn):
         """
-        Run database migrations after Tortoise initialization.
+        Run database migrations programmatically using SQLAlchemy Inspector.
         """
-
-        conn = Tortoise.get_connection("default")
+        def get_columns(sync_conn, table_name: str):
+            inspector = inspect(sync_conn)
+            if inspector.has_table(table_name):
+                return [col["name"] for col in inspector.get_columns(table_name)]
+            return []
 
         # 2026-05-04: Added `mode` and `color` columns to `danmaku_record`.
-        try:
-            await conn.execute_query("ALTER TABLE danmaku_record ADD COLUMN mode INT DEFAULT 1;")
-        except Exception:
-            pass
-        try:
-            await conn.execute_query("ALTER TABLE danmaku_record ADD COLUMN color INT DEFAULT 16777215;")
-        except Exception:
-            pass
+        danmaku_cols = await conn.run_sync(get_columns, "danmaku_record")
+        if danmaku_cols:
+            if "mode" not in danmaku_cols:
+                await conn.execute(text("ALTER TABLE danmaku_record ADD COLUMN mode INT DEFAULT 1;"))
+            if "color" not in danmaku_cols:
+                await conn.execute(text("ALTER TABLE danmaku_record ADD COLUMN color INT DEFAULT 16777215;"))

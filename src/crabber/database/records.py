@@ -1,51 +1,52 @@
-from tortoise import fields, models
+from decimal import Decimal
+from typing import Any
+
+from sqlmodel import SQLModel, Field
+from sqlalchemy import Column, JSON, Numeric
 
 
-class GiftRecord(models.Model):
-    id = fields.IntField(pk=True)
-    room_id = fields.IntField()
-    user = fields.CharField(max_length=255)
-    uid = fields.IntField(default=-1)
-    gift = fields.CharField(max_length=255)
-    num = fields.IntField()
-    total_value = fields.DecimalField(max_digits=12, decimal_places=2)
-    comment = fields.CharField(max_length=1024, default="")
-    timestamp = fields.IntField()
-
-    class Meta(models.Model.Meta):
-        table = "gift_record"
-
-
-class DanmakuRecord(models.Model):
-    id = fields.IntField(pk=True)
-    room_id = fields.IntField()
-    user = fields.CharField(max_length=255)
-    uid = fields.IntField(default=-1)
-    content = fields.CharField(max_length=1024)
-    timestamp = fields.IntField()
-    mode = fields.IntField(default=1)
-    color = fields.IntField(default=16777215)
-
-    class Meta(models.Model.Meta):
-        table = "danmaku_record"
+class GiftRecord(SQLModel, table=True):
+    __tablename__ = "gift_record"
+    
+    id: int | None = Field(default=None, primary_key=True)
+    room_id: int
+    user: str = Field(max_length=255)
+    uid: int = Field(default=-1)
+    gift: str = Field(max_length=255)
+    num: int
+    total_value: Decimal = Field(sa_column=Column(Numeric(12, 2, asdecimal=True)))
+    comment: str = Field(max_length=1024, default="")
+    timestamp: int
 
 
-class LiveRecord(models.Model):
-    id = fields.IntField(pk=True)
-    room_id = fields.IntField()
-    title = fields.CharField(max_length=255)
-    area = fields.CharField(max_length=255)
-    cover_url = fields.CharField(max_length=1024)
-    start_time = fields.IntField()
-    end_time = fields.IntField()
-    offline_gift_revenue = fields.DecimalField(max_digits=12, decimal_places=2, default=0)
-    offline_guard_revenue = fields.DecimalField(max_digits=12, decimal_places=2, default=0)
-    offline_sc_revenue = fields.DecimalField(max_digits=12, decimal_places=2, default=0)
-    gift_revenue = fields.DecimalField(max_digits=12, decimal_places=2, default=0)
-    guard_revenue = fields.DecimalField(max_digits=12, decimal_places=2, default=0)
-    sc_revenue = fields.DecimalField(max_digits=12, decimal_places=2, default=0)
-    summary = fields.TextField(default="")
-    details = fields.JSONField(default={})
+class DanmakuRecord(SQLModel, table=True):
+    __tablename__ = "danmaku_record"
+    
+    id: int | None = Field(default=None, primary_key=True)
+    room_id: int
+    user: str = Field(max_length=255)
+    uid: int = Field(default=-1)
+    content: str = Field(max_length=1024)
+    timestamp: int
+    mode: int = Field(default=1)
+    color: int = Field(default=16777215)
 
-    class Meta(models.Model.Meta):
-        table = "live_record"
+
+class LiveRecord(SQLModel, table=True):
+    __tablename__ = "live_record"
+    
+    id: int | None = Field(default=None, primary_key=True)
+    room_id: int
+    title: str = Field(max_length=255)
+    area: str = Field(max_length=255)
+    cover_url: str = Field(max_length=1024)
+    start_time: int
+    end_time: int
+    offline_gift_revenue: Decimal = Field(default=Decimal(0), sa_column=Column(Numeric(12, 2, asdecimal=True)))
+    offline_guard_revenue: Decimal = Field(default=Decimal(0), sa_column=Column(Numeric(12, 2, asdecimal=True)))
+    offline_sc_revenue: Decimal = Field(default=Decimal(0), sa_column=Column(Numeric(12, 2, asdecimal=True)))
+    gift_revenue: Decimal = Field(default=Decimal(0), sa_column=Column(Numeric(12, 2, asdecimal=True)))
+    guard_revenue: Decimal = Field(default=Decimal(0), sa_column=Column(Numeric(12, 2, asdecimal=True)))
+    sc_revenue: Decimal = Field(default=Decimal(0), sa_column=Column(Numeric(12, 2, asdecimal=True)))
+    summary: str = Field(default="")
+    details: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
