@@ -21,6 +21,39 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
     guard_revenue = Decimal(0)
     sc_revenue = Decimal(0)
 
+    state_recovered_event = asyncio.Event()
+
+    async def _recover_gift_logger_state() -> None:
+        nonlocal gift_revenue, guard_revenue, sc_revenue
+        try:
+            if not ctx.db:
+                logger.warning("local database is not configured, gift statistics may not be accurate across program restarts.")
+                return
+
+            if ctx.room_info.is_online:
+                summary = await ctx.db.get_gift_summary(ctx.room_id, ctx.room_info.start_time)
+                if summary:
+                    gift_revenue = summary.get("gift_revenue", gift_revenue)
+                    guard_revenue = summary.get("guard_revenue", guard_revenue)
+                    sc_revenue = summary.get("sc_revenue", sc_revenue)
+                    logger.debug(f"recovered online stats: gift={gift_revenue}, guard={guard_revenue}, sc={sc_revenue}")
+            else:
+                last_record = await ctx.db.get_latest_live_record(ctx.room_id)
+                if last_record:
+                    summary = await ctx.db.get_gift_summary(ctx.room_id, last_record["end_time"])
+                    if summary:
+                        gift_revenue = summary.get("gift_revenue", gift_revenue)
+                        guard_revenue = summary.get("guard_revenue", guard_revenue)
+                        sc_revenue = summary.get("sc_revenue", sc_revenue)
+                        logger.debug(f"recovered offline stats: gift={gift_revenue}, guard={guard_revenue}, sc={sc_revenue}")
+        except Exception as e:
+            logger.error(f"failed to recover state: {e}")
+        finally:
+            state_recovered_event.set()
+
+
+    ctx.add_task(_recover_gift_logger_state())
+
 
     async def handler(event: dict) -> None:
         cmd = event.get("data", {}).get("cmd", "unknown")
@@ -106,6 +139,9 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
 
     async def _on_room_online(info: RoomInfo) -> None:
+        # wait until the recovery finished
+        await state_recovered_event.wait()
+
         # this.start_time - previous.end_time
         dura = info.start_time - info.end_time
         logger.info(f"开始直播了！距离上次直播结束或程序开始运行经过了{format_timedelta(dura)}")
@@ -134,6 +170,9 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
         _clear_records() # clear records after status change
 
     async def _on_room_offline(info: RoomInfo) -> None:
+        # wait until the recovery finished
+        await state_recovered_event.wait()
+
         # this.end_time - this.start_time
         dura = info.end_time - info.start_time
         logger.info(f"本次直播时长为{format_timedelta(dura)}")

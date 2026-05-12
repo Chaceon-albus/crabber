@@ -19,3 +19,9 @@ class BaseAdapter:
 
     async def update_stats(self, room_id: int, start_time: datetime, end_time: datetime, gift_revenue: Decimal, guard_revenue: Decimal, sc_revenue: Decimal, summary: str, details: Dict[str, Any]):
         pass
+
+    async def get_latest_live_record(self, room_id: int) -> Dict[str, Any] | None:
+        pass
+
+    async def get_gift_summary(self, room_id: int, start_timestamp: datetime) -> Dict[str, Decimal]:
+        pass

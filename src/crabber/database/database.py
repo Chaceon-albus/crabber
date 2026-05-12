@@ -69,3 +69,15 @@ class Database(BaseAdapter):
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             self._check_results(results, "update stats")
+
+    async def get_latest_live_record(self, room_id: int) -> Dict[str, Any] | None:
+        for adapter in self.adapters:
+            if isinstance(adapter, SqliteAdapter):
+                return await adapter.get_latest_live_record(room_id)
+        return None
+
+    async def get_gift_summary(self, room_id: int, start_timestamp: datetime) -> Dict[str, Decimal]:
+        for adapter in self.adapters:
+            if isinstance(adapter, SqliteAdapter):
+                return await adapter.get_gift_summary(room_id, start_timestamp)
+        return {"gift_revenue": Decimal(0), "guard_revenue": Decimal(0), "sc_revenue": Decimal(0)}

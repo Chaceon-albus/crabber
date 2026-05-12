@@ -71,9 +71,10 @@ class CloudflareD1Adapter(BaseAdapter):
         sql = """
             INSERT INTO live_record
             (room_id, title, area, cover_url, start_time, end_time, offline_gift_revenue, offline_guard_revenue, offline_sc_revenue, gift_revenue, guard_revenue, sc_revenue, summary, details)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE NOT EXISTS (SELECT 1 FROM live_record WHERE room_id=? AND start_time=?)
         """
-        params = [room_id, title, area, cover_url, int(start_time.timestamp()), int(end_time.timestamp()), f"{offline_gift_revenue:.2f}", f"{offline_guard_revenue:.2f}", f"{offline_sc_revenue:.2f}", f"{gift_revenue:.2f}", f"{guard_revenue:.2f}", f"{sc_revenue:.2f}", summary, details_str]
+        params = [room_id, title, area, cover_url, int(start_time.timestamp()), int(end_time.timestamp()), f"{offline_gift_revenue:.2f}", f"{offline_guard_revenue:.2f}", f"{offline_sc_revenue:.2f}", f"{gift_revenue:.2f}", f"{guard_revenue:.2f}", f"{sc_revenue:.2f}", summary, details_str, room_id, int(start_time.timestamp())]
 
         async with self._write_lock:
             await self._execute_sql(sql, params)
@@ -89,3 +90,9 @@ class CloudflareD1Adapter(BaseAdapter):
 
         async with self._write_lock:
             await self._execute_sql(sql, params)
+
+    async def get_latest_live_record(self, room_id: int) -> Dict[str, Any] | None:
+        pass
+
+    async def get_gift_summary(self, room_id: int, start_timestamp: datetime) -> Dict[str, Decimal]:
+        pass

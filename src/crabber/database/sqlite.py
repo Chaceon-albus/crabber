@@ -60,13 +60,15 @@ class SqliteAdapter(BaseAdapter):
     async def record_stats(self, room_id: int, title: str, area: str, cover_url: str, start_time: datetime, end_time: datetime, offline_gift_revenue: Decimal, offline_guard_revenue: Decimal, offline_sc_revenue: Decimal, gift_revenue: Decimal, guard_revenue: Decimal, sc_revenue: Decimal, summary: str, details: Dict[str, Any]):
         await self._ensure_init()
         async with self._write_lock:
-            await LiveRecord.create(
-                room_id=room_id, title=title, area=area, cover_url=cover_url,
-                start_time=int(start_time.timestamp()), end_time=int(end_time.timestamp()),
-                offline_gift_revenue=offline_gift_revenue.quantize(Decimal("0.00")), offline_guard_revenue=offline_guard_revenue.quantize(Decimal("0.00")), offline_sc_revenue=offline_sc_revenue.quantize(Decimal("0.00")),
-                gift_revenue=gift_revenue.quantize(Decimal("0.00")), guard_revenue=guard_revenue.quantize(Decimal("0.00")), sc_revenue=sc_revenue.quantize(Decimal("0.00")),
-                summary=summary, details=details
-            )
+            existing = await LiveRecord.filter(room_id=room_id, start_time=int(start_time.timestamp())).first()
+            if not existing:
+                await LiveRecord.create(
+                    room_id=room_id, title=title, area=area, cover_url=cover_url,
+                    start_time=int(start_time.timestamp()), end_time=int(end_time.timestamp()),
+                    offline_gift_revenue=offline_gift_revenue.quantize(Decimal("0.00")), offline_guard_revenue=offline_guard_revenue.quantize(Decimal("0.00")), offline_sc_revenue=offline_sc_revenue.quantize(Decimal("0.00")),
+                    gift_revenue=gift_revenue.quantize(Decimal("0.00")), guard_revenue=guard_revenue.quantize(Decimal("0.00")), sc_revenue=sc_revenue.quantize(Decimal("0.00")),
+                    summary=summary, details=details
+                )
 
     async def update_stats(self, room_id: int, start_time: datetime, end_time: datetime, gift_revenue: Decimal, guard_revenue: Decimal, sc_revenue: Decimal, summary: str, details: Dict[str, Any]):
         await self._ensure_init()
@@ -76,6 +78,36 @@ class SqliteAdapter(BaseAdapter):
                 gift_revenue=gift_revenue.quantize(Decimal("0.00")), guard_revenue=guard_revenue.quantize(Decimal("0.00")), sc_revenue=sc_revenue.quantize(Decimal("0.00")),
                 summary=summary, details=details
             )
+
+    async def get_latest_live_record(self, room_id: int) -> Dict[str, Any] | None:
+        await self._ensure_init()
+        record = await LiveRecord.filter(room_id=room_id).order_by("-start_time").first()
+        if record:
+            return {
+                "room_id": record.room_id,
+                "start_time": datetime.fromtimestamp(record.start_time),
+                "end_time": datetime.fromtimestamp(record.end_time),
+            }
+        return None
+
+    async def get_gift_summary(self, room_id: int, start_timestamp: datetime) -> Dict[str, Decimal]:
+        await self._ensure_init()
+        gifts = await GiftRecord.filter(room_id=room_id, timestamp__gte=int(start_timestamp.timestamp()))
+        summary = {
+            "gift_revenue": Decimal("0.00"),
+            "guard_revenue": Decimal("0.00"),
+            "sc_revenue": Decimal("0.00")
+        }
+        for g in gifts:
+            val = Decimal(g.total_value)
+            if g.gift == "SuperChat":
+                summary["sc_revenue"] += val
+            elif g.gift in ["舰长", "提督", "总督"]:
+                summary["guard_revenue"] += val
+            else:
+                summary["gift_revenue"] += val
+        
+        return summary
 
 
     async def _run_migrations(self):
