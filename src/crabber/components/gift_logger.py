@@ -36,7 +36,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                     gift_revenue = summary.get("gift_revenue", gift_revenue)
                     guard_revenue = summary.get("guard_revenue", guard_revenue)
                     sc_revenue = summary.get("sc_revenue", sc_revenue)
-                    logger.debug(f"recovered online stats: gift={gift_revenue}, guard={guard_revenue}, sc={sc_revenue}")
+                    logger.info(f"recovered online stats: gift={gift_revenue}, guard={guard_revenue}, sc={sc_revenue}")
             else:
                 last_record = await ctx.db.get_latest_live_record(ctx.room_id)
                 if last_record:
@@ -45,7 +45,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                         gift_revenue = summary.get("gift_revenue", gift_revenue)
                         guard_revenue = summary.get("guard_revenue", guard_revenue)
                         sc_revenue = summary.get("sc_revenue", sc_revenue)
-                        logger.debug(f"recovered offline stats: gift={gift_revenue}, guard={guard_revenue}, sc={sc_revenue}")
+                        logger.info(f"recovered offline stats: gift={gift_revenue}, guard={guard_revenue}, sc={sc_revenue}")
         except Exception as e:
             logger.error(f"failed to recover state: {e}")
         finally:
