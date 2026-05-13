@@ -40,7 +40,10 @@ def get_handler(
         {
             "schedule": cc.get("schedule", ""),
             "interval": cc.get("interval", {}),
-            "message": MessageSelector(cc.get("message", ""), cc.get("random", False)),
+            "message": MessageSelector(
+                message=cc.get("message", ""),
+                random=cc.get("random", False),
+            ),
         }  for cc in on_cron if cc.get("schedule") or cc.get("interval")
     ]
 
@@ -108,9 +111,9 @@ def get_handler(
                         args=[cron["message"]]
                     )
                 )
-                logger.info(f"added chatter cron task: {cron['schedule']}")
+                logger.info(f"added chatter cron task: {trigger}")
             except Exception as e:
-                logger.error(f"failed to add cron task for {cron['schedule']}: {e}")
+                logger.error(f"failed to add cron task for {cron}: {e}")
 
 
     async def chatter_offline(_: RoomInfo) -> None:
