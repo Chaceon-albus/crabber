@@ -34,9 +34,12 @@ class SqliteAdapter(BaseAdapter):
 
             self.logger.debug(f"initializing sqlmodel with {self.path}")
             self._engine = create_async_engine(f"sqlite+aiosqlite:///{self.path}")
-            
+
             async with self._engine.begin() as conn:
                 await conn.run_sync(SQLModel.metadata.create_all)
+                # Enable WAL mode for high concurrency support (Write-Ahead Logging)
+                await conn.execute(text("PRAGMA journal_mode=WAL;"))
+                await conn.execute(text("PRAGMA synchronous=NORMAL;"))
                 await self._run_migrations(conn)
 
             self._initialized = True
@@ -124,7 +127,7 @@ class SqliteAdapter(BaseAdapter):
                 GiftRecord.timestamp >= int(start_timestamp.timestamp())
             )
             results = (await session.exec(statement)).all()
-            
+
             summary = {
                 "gift_revenue": Decimal("0.00"),
                 "guard_revenue": Decimal("0.00"),
@@ -138,7 +141,7 @@ class SqliteAdapter(BaseAdapter):
                     summary["guard_revenue"] += val
                 else:
                     summary["gift_revenue"] += val
-            
+
             return summary
 
     async def _run_migrations(self, conn):

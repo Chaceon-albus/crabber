@@ -23,14 +23,14 @@ class StringDecimal(types.TypeDecorator):
     def process_result_value(self, value, dialect):
         if value is not None:
             return Decimal(str(value))
-        
+
         # db record is NOT NULL, fallback to 0.00 just in case
         return Decimal("0.00")
 
 
 class GiftRecord(SQLModel, table=True):
     __tablename__ = "gift_record"
-    
+
     id: int | None = Field(default=None, primary_key=True)
     room_id: int
     user: str = Field(max_length=255)
@@ -44,7 +44,7 @@ class GiftRecord(SQLModel, table=True):
 
 class DanmakuRecord(SQLModel, table=True):
     __tablename__ = "danmaku_record"
-    
+
     id: int | None = Field(default=None, primary_key=True)
     room_id: int
     user: str = Field(max_length=255)
@@ -57,7 +57,7 @@ class DanmakuRecord(SQLModel, table=True):
 
 class LiveRecord(SQLModel, table=True):
     __tablename__ = "live_record"
-    
+
     id: int | None = Field(default=None, primary_key=True)
     room_id: int
     title: str = Field(max_length=255)
