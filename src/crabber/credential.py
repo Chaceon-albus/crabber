@@ -8,6 +8,7 @@ import aiofiles
 import bilibili_api as biliapi
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 from crabber.logging import logger
 
@@ -108,10 +109,16 @@ class CredentialManager:
 
 
     def _really_start_monitoring(self) -> None:
+        # check every interval time
         self.scheduler.add_job(
             self._check_and_refresh,
             "interval", seconds=self._interval,
             next_run_time=datetime.now(), coalesce=True,
+        )
+        # check at 00:00:15 every day
+        self.scheduler.add_job(
+            func=self._check_and_refresh,
+            trigger=CronTrigger(hour=0, minute=0, second=15, timezone="Asia/Shanghai"),
         )
         self.scheduler.start()
         logger.info(f"started credential monitoring with interval of {self._interval} seconds")
