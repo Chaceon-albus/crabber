@@ -222,8 +222,21 @@ class Crabber:
 
 
     async def _update_room_info(self) -> None: # no exception will be raised
+
+        attempt = 0
+        max_attempt = 3
+        room_info = {}
+
         try:
-            room_info   = await self.room.get_room_info() # type: ignore
+
+            while attempt < max_attempt and not room_info:
+                attempt += 1
+                try:
+                    room_info = await self.room.get_room_info() # type: ignore
+                except Exception as e:
+                    self.logger.exception(f"[{attempt}/{max_attempt}] failed to update room info: {e}")
+                    await asyncio.sleep(3*attempt) # 3s, 6s, 9s
+
             anchor_info = room_info.get("anchor_info", {})
             room_info   = room_info.get("room_info", {})
 
@@ -243,7 +256,7 @@ class Crabber:
                 if self.room_info.stream: # make linter happy
                     self.room_info.stream.status = StreamStatus.STREAMING
         except Exception as e:
-            self.logger.exception(f"failed to update room info: {e}")
+            self.logger.exception(f"failed to write room info: {e}")
         else:
             self.logger.debug(f"update room info: {self.room_info}")
 
