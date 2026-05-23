@@ -412,7 +412,7 @@ class Crabber:
                 case "CHANGE_ROOM_INFO":
                     # relatively rare event, may be received when the streamer changes the cover
                     self.logger.info(f"received CHANGE_ROOM_INFO event with data: {data}")
-                    self.room_info.cover = data.get("background", self.room_info.cover)
+                    self.room_info.cover = data.get("background") or self.room_info.cover
                     await self._on_room_change()
 
                 case _:

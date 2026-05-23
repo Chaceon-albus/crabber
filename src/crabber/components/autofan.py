@@ -32,10 +32,10 @@ def get_handler(ctx: Crabber, gift_num: int = 1, *args, **kwargs) -> Callable[[d
                 gift_id=popular_ticket_id, price=100,
                 gift_num=gift_num,
             )
-            if send_id := resp.get("send_id", ""):
-                logger.info(f"success to send {gift_num}×popular ticket(s): {send_id}")
+            if resp.get("send_id", ""):
+                logger.info(f"success to send {gift_num}×popular ticket(s)")
             else:
-                logger.info(f"tried to send {gift_num}×popular ticket(s) and got:\n{jsonify(send_id)}")
+                logger.info(f"tried to send {gift_num}×popular ticket(s) and got:\n{jsonify(resp)}")
         except Exception as e:
             logger.error(f"failed to send popular ticket: {e}")
 
