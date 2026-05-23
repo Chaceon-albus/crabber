@@ -78,6 +78,14 @@
                         "groups": [123456789, 1145141919810],
                         "favlists": [12345678]
                     }
+                },
+                {
+                    "type": "europa",
+                    "requires": ["napcat", "this key takes no effect, but it requires napcat service if config presents"],
+                    "config": {
+                        "groups": [123456789, 1145141919810],
+                        "users": [12345678]
+                    }
                 }
             ],
             "database": [
