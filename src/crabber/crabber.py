@@ -307,14 +307,12 @@ class Crabber:
             await self.refresh_event.wait()
             self.refresh_event.clear()
 
-            if self.danmaku and self.danmaku.credential and self.cred_manager.credential:
-                self.logger.debug("updating credential from cred_manager...")
-                self.danmaku.room = LiveRoom(self.room_id, credential=self.cred_manager.credential)
-                self.danmaku.credential = self.cred_manager.credential
-                # await self.danmaku.disconnect() # do we need to force a reconnect?
-
             try:
-                pass
+                if self.danmaku and self.cred_manager.credential:
+                    self.logger.debug("updating credential from cred_manager...")
+                    self.danmaku.room = LiveRoom(self.room_id, credential=self.cred_manager.credential)
+                    self.danmaku.credential = self.cred_manager.credential
+                    # await self.danmaku.disconnect() # do we need to force a reconnect?
             except Exception as e:
                 self.logger.exception(f"error occurred while handling credential update: {e}")
 
@@ -426,14 +424,20 @@ class Crabber:
     @property
     def room(self) -> LiveRoom | None:
         if self.danmaku is None: return None
-        if self.danmaku.room is None:
+        if (
+            self.danmaku.room is None
+            or (
+                self.cred_manager.credential
+                and self.danmaku.room.credential is not self.cred_manager.credential
+            )
+        ):
             self.danmaku.room = LiveRoom(self.room_id, credential=self.cred_manager.credential)
         return self.danmaku.room
 
     @property
     def has_credential(self) -> bool:
         room = self.room
-        return True if room and room.credential.has_sessdata() else True
+        return True if room and room.credential.has_sessdata() else False
 
 
     def start(self) -> None:

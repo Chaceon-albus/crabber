@@ -30,7 +30,9 @@ class CredentialManager:
             cred_json = {}
             logger.warning("no credential file provided or file does not exist, using empty credential")
 
-        self.credential: biliapi.Credential | None = None
+        self.credential: biliapi.Credential | None = (
+            biliapi.Credential(**cred_json) if cred_json else None
+        )
 
         self._interval = interval
         self._lock = threading.Lock()

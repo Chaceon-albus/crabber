@@ -6,6 +6,7 @@ import asyncio
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Callable, TYPE_CHECKING
+from bilibili_api.live import ScreenResolution
 
 
 if TYPE_CHECKING:
@@ -41,6 +42,12 @@ class LiveStream:
         except Exception as e:
             self.ctx.logger.error(f"failed to fetch live streams: {e}")
         else:
+            current_qn = resp.get("current_qn", resp.get("current_quality", resp.get("qn", "unknown")))
+            quality_name = _format_screen_resolution(current_qn)
+            accept_quality = resp.get("accept_quality", [])
+            self.ctx.logger.info(
+                f"live stream quality: {quality_name} ({current_qn}), accept_quality={accept_quality}"
+            )
             urls = [d.get("url") for d in resp.get("durl", []) if "url" in d]
 
         return urls
@@ -247,3 +254,16 @@ class LiveStream:
 
         if self.client and not self.client.closed:
             await self.client.close()
+
+
+def _format_screen_resolution(qn: int | str) -> str:
+    try:
+        qn = int(qn)
+    except (TypeError, ValueError):
+        return "unknown"
+
+    for resolution in ScreenResolution:
+        if resolution.value == qn:
+            return resolution.name
+
+    return "unknown"
