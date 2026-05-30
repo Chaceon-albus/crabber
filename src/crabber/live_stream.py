@@ -130,7 +130,7 @@ class LiveStream:
 
             async def _dispatch_worker() -> None:
 
-                last_retry_time = datetime.now()
+                last_retry_time = datetime.fromtimestamp(0) # never retry before
                 failure_counter = 0
                 failure_flag = False
 
@@ -146,21 +146,9 @@ class LiveStream:
 
                         try:
 
-                            # StreamStatus.ONLINE means:
-                            # the room is live before the program starts (first attempt to download stream)
-                            # or
-                            # the room just turned live but not started streaming
-                            if self.status == StreamStatus.ONLINE:
-                                # retry in ? seconds to make it after retry_delay since the last attempt
-                                if datetime.now() - last_retry_time < timedelta(seconds=retry_delay):
-                                    delay = retry_delay - (datetime.now() - last_retry_time).total_seconds()
-                            elif self.status == StreamStatus.STREAMING:
-                                # in case of flooding, wait a bit before retrying
-                                if datetime.now() - last_retry_time < timedelta(seconds=1):
-                                    delay = 1 - (datetime.now() - last_retry_time).total_seconds()
-                            else:
-                                # this should not happen, but just in case
-                                break
+                            # force retry after delay
+                            if datetime.now() - last_retry_time < timedelta(seconds=retry_delay):
+                                delay = retry_delay - (datetime.now() - last_retry_time).total_seconds()
 
                             if delay > 0:
                                 ctx.logger.info(f"trying to download live stream in {delay:.1f} second(s)")
