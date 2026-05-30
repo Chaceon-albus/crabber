@@ -14,6 +14,7 @@ dependencies = [
     "bilibili-api-python>=17.4.1",
     "cloudflare>=4.3.1",
     "dashscope>=1.25.19",
+    "openai[aiohttp]>=2.38.0",
     "sqlmodel>=0.0.38",
 ]
 

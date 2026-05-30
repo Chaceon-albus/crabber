@@ -4,11 +4,15 @@ from crabber.logging import logger as default_logger
 from .interface import BaseService
 from .napcat import NapCatService
 from .ntfy import NtfyService
+from .asr import AsrService
+from .llm import LlmService
 
 
 SERVICE_TYPES: dict[str, type[BaseService]] = {
     NapCatService.service_name: NapCatService,
     NtfyService.service_name: NtfyService,
+    AsrService.service_name: AsrService,
+    LlmService.service_name: LlmService,
 }
 
 
