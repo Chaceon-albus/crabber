@@ -71,7 +71,7 @@
                 },
                 {
                     "type": "parrot",
-                    "requires": ["napcat", "this key takes no effect, but it does require napcat service"],
+                    "__COMMENT__": "parrot requires napcat service",
                     "config": {
                         "extra_uids": [],
                         "interval": 600,
@@ -81,11 +81,16 @@
                 },
                 {
                     "type": "europa",
-                    "requires": ["napcat", "this key takes no effect, but it requires napcat service if config presents"],
+                    "__COMMENT__": "europa requires napcat service if config presents",
                     "config": {
                         "groups": [123456789, 1145141919810],
                         "users": [12345678]
                     }
+                },
+                {
+                    "type": "iris",
+                    "__COMMENT__": "iris requires asr & llm service",
+                    "config": {}
                 }
             ],
             "database": [
@@ -117,6 +122,20 @@
                     "config": {
                         "endpoint": "https://ntfy.sh/",
                         "token": "tk_..."
+                    }
+                },
+                {
+                    "type": "asr",
+                    "config": {
+                        "provider": "fun-asr",
+                        "fun_asr_params": {
+                            "api_key": "sk-*****",
+                            "__comment__": "https://help.aliyun.com/zh/model-studio/fun-asr-realtime-python-sdk",
+                            "semantic_punctuation_enabled": true
+                        },
+                        "doubao_asr_params": {
+                            "__comment__": "not implemented yet"
+                        }
                     }
                 }
             ]
