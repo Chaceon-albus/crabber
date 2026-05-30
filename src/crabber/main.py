@@ -43,6 +43,7 @@ def main() -> None:
             cred_manager=bili_cm,
             database=c.get("database", []),
             services=c.get("services", []),
+            status_check_interval=config.get("status_check_interval", 120),
         )
 
         for component in c.get("components", []):

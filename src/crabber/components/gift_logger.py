@@ -21,6 +21,9 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
     guard_revenue = Decimal(0)
     sc_revenue = Decimal(0)
 
+    if hasattr(ctx, "recovery_event"):
+        ctx.recovery_event.clear()
+
     state_recovered_event = asyncio.Event()
 
     async def _recover_gift_logger_state() -> None:
@@ -52,6 +55,8 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
             logger.error(f"failed to recover state: {e}")
         finally:
             state_recovered_event.set()
+            if hasattr(ctx, "recovery_event"):
+                ctx.recovery_event.set()
 
 
     ctx.add_task(_recover_gift_logger_state())

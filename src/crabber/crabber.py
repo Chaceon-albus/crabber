@@ -34,6 +34,7 @@ class Crabber:
         cred_manager: CredentialManager,
         database: list | None = None,
         services: list | None = None,
+        status_check_interval: int = 120,
     ) -> None:
 
         self.logger = logger.getChild(f"({name})")
@@ -63,6 +64,10 @@ class Crabber:
         self._is_cleaned_up = False
         self._services_config = services or []
         self.services: dict[str, BaseService] = {} # key: type -> value: Service class
+
+        self.status_check_interval = status_check_interval
+        self.recovery_event = asyncio.Event()
+        self.recovery_event.set()
 
         self._is_ready = threading.Event()
 
@@ -440,11 +445,61 @@ class Crabber:
         return True if room and room.credential.has_sessdata() else False
 
 
+    async def _check_live_status(self) -> None:
+        is_currently_online = self.room_info.is_online
+        await self._update_room_info()
+
+        # check transition from online to offline (missed PREPARING)
+        if is_currently_online and not self.room_info.is_online:
+            self.logger.info("detected room offline during status check")
+            self.room_info.end_time = datetime.now()
+            if self.room_info.stream:
+                self.room_info.stream.status = StreamStatus.OFFLINE
+            await self._on_room_offline()
+
+
+    async def _check_missed_preparing_on_startup(self) -> None:
+        if not self.db: return
+
+        try:
+            last_record = await self.db.get_latest_live_record(self.room_id)
+            if last_record:
+                start_time = last_record.get("start_time")
+                end_time = last_record.get("end_time")
+                # end_time <= start_time -> not offline
+                # not self.room_info.is_online -> room is offline
+                # which means we missed an offline event
+                if start_time and end_time and end_time <= start_time and not self.room_info.is_online:
+                    self.logger.info(f"fetected missed offline event (start_time={start_time}, end_time={end_time}).")
+                    self.room_info.start_time = start_time
+                    self.room_info.end_time = datetime.now()
+
+                    try:
+                        # in case gift logger is not enabled
+                        await asyncio.wait_for(self.recovery_event.wait(), 10)
+                    except Exception:
+                        pass
+                    finally:
+                        self.logger.info("trigger offline callbacks...")
+                        await self._on_room_offline()
+        except Exception as e:
+            self.logger.exception(f"failed to check missed offline on startup: {e}")
+
+
     def start(self) -> None:
         if self.room_info.is_online and self.loop and self.loop.is_running():
             self.logger.info("room is online before the program start")
             asyncio.run_coroutine_threadsafe(self._on_room_online(), self.loop)
             asyncio.run_coroutine_threadsafe(self._on_room_streaming(), self.loop) # assume that it's streaming
+
+        if self.loop and self.loop.is_running():
+            self.add_job(
+                self._check_live_status,
+                trigger="interval",
+                seconds=self.status_check_interval,
+                next_run_time=datetime.now(),
+            )
+            self.add_task(self._check_missed_preparing_on_startup())
 
 
     def stop(self) -> None:
