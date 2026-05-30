@@ -79,7 +79,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                 value_in_cny = coin_to_cny(price * num)
 
                 gift_revenue += value_in_cny
-                logger.info(f"{user} {action}了 {gift_name}×{num}，价值￥{value_in_cny:.2f}")
+                logger.debug(f"{user} {action}了 {gift_name}×{num}，价值￥{value_in_cny:.2f}")
 
                 if ctx.db:
                     await ctx.db.record_gift(
@@ -100,7 +100,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                 value_in_cny = coin_to_cny(price)
 
                 guard_revenue += value_in_cny
-                logger.info(f"{user} 开通了{num}个{unit}的{role}，价值￥{value_in_cny:.2f}")
+                logger.debug(f"{user} 开通了{num}个{unit}的{role}，价值￥{value_in_cny:.2f}")
 
                 if ctx.db:
                     await ctx.db.record_gift(
@@ -118,7 +118,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                 value_in_cny = Decimal(f"{float(data.get("price", 0)):.2f}") # CNY price
 
                 sc_revenue += value_in_cny
-                logger.info(f"{user} 发送了￥{value_in_cny:.2f}的醒目留言: {message}")
+                logger.debug(f"{user} 发送了￥{value_in_cny:.2f}的醒目留言: {message}")
 
                 if ctx.db:
                     await ctx.db.record_gift(

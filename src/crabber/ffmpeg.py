@@ -122,12 +122,13 @@ class FFmpegProcess:
     async def start(self) -> None:
         """Spawn the FFmpeg subprocess and start background stream readers."""
         if self._process is not None:
-            raise RuntimeError("FFmpeg process has already been started")
+            raise RuntimeError("ffmpeg process has already been started")
 
         if not self.ffmpeg_path:
             raise FileNotFoundError("ffmpeg executable not found in PATH or specified path is invalid")
 
-        self.logger.info(f"Starting FFmpeg process: {self.ffmpeg_path} {' '.join(self.args)}")
+        self.logger.info(f"starting ffmpeg process: {self.ffmpeg_path} {' '.join(self.args)}")
+        self.logger.debug(f"process arguments: {self.ffmpeg_path} {' '.join(self.args)}")
 
         self._process = await asyncio.create_subprocess_exec(
             self.ffmpeg_path,
@@ -157,7 +158,7 @@ class FFmpegProcess:
             RuntimeError: If the process is not started or stdin is not available.
         """
         if self._process is None or self._process.stdin is None:
-            raise RuntimeError("FFmpeg process is not started or stdin is not available")
+            raise RuntimeError("ffmpeg process is not started or stdin is not available")
 
         if self._process.returncode is not None:
             raise FFmpegError(self._process.returncode, list(self._stderr_logs))
@@ -177,7 +178,7 @@ class FFmpegProcess:
         Returns empty bytes when EOF is reached.
         """
         if self._process is None:
-            raise RuntimeError("FFmpeg process is not started")
+            raise RuntimeError("ffmpeg process is not started")
         return await self.stdout.get()
 
     async def read_stderr(self) -> bytes:
@@ -186,7 +187,7 @@ class FFmpegProcess:
         Returns empty bytes when EOF is reached.
         """
         if self._process is None:
-            raise RuntimeError("FFmpeg process is not started")
+            raise RuntimeError("ffmpeg process is not started")
         return await self.stderr.get()
 
     async def wait(self) -> int:
@@ -196,7 +197,7 @@ class FFmpegProcess:
             The exit return code of the process.
         """
         if self._process is None:
-            raise RuntimeError("FFmpeg process is not started")
+            raise RuntimeError("ffmpeg process is not started")
         return await self._process.wait()
 
     async def close(self, timeout: float = 10.0) -> int:
@@ -215,7 +216,7 @@ class FFmpegProcess:
         if self._process is None:
             return 0
 
-        self.logger.info("Closing FFmpeg process gracefully...")
+        self.logger.info("closing ffmpeg process gracefully...")
 
         # 1. Write EOF to stdin if supported
         if self._process.stdin is not None:
@@ -234,14 +235,14 @@ class FFmpegProcess:
             returncode = await asyncio.wait_for(self._process.wait(), timeout=timeout)
         except (asyncio.TimeoutError, TimeoutError):
             self.logger.warning(
-                f"FFmpeg process did not exit within {timeout}s. Force killing..."
+                f"ffmpeg process did not exit within {timeout}s... force killing..."
             )
             with suppress(ProcessLookupError):
                 self._process.kill()
             try:
                 returncode = await asyncio.wait_for(self._process.wait(), timeout=5.0)
             except (asyncio.TimeoutError, TimeoutError):
-                self.logger.error("FFmpeg process could not be killed.")
+                self.logger.error("ffmpeg process could not be killed.")
                 returncode = -1
 
         # 4. Clean up background reader tasks
@@ -257,7 +258,7 @@ class FFmpegProcess:
 
         # 5. Clear reference
         self._process = None
-        self.logger.info(f"FFmpeg process stopped with return code: {returncode}")
+        self.logger.debug(f"ffmpeg process stopped with return code: {returncode}")
         return returncode
 
     async def _read_stdout_loop(self) -> None:
@@ -272,7 +273,7 @@ class FFmpegProcess:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            self.logger.error(f"Error reading FFmpeg stdout: {e}")
+            self.logger.error(f"error reading ffmpeg stdout: {e}")
         finally:
             if self._stdout_queue is not None:
                 await self._stdout_queue.put(b"")
@@ -289,14 +290,14 @@ class FFmpegProcess:
                 decoded_line = line.decode("utf-8", errors="replace").strip()
                 if decoded_line:
                     self._stderr_logs.append(decoded_line)
-                    self.logger.debug(f"FFmpeg stderr: {decoded_line}")
+                    self.logger.debug(f"ffmpeg stderr: {decoded_line}")
 
                 if self._stderr_queue is not None:
                     await self._stderr_queue.put(line)
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            self.logger.error(f"Error reading FFmpeg stderr: {e}")
+            self.logger.error(f"error reading ffmpeg stderr: {e}")
         finally:
             if self._stderr_queue is not None:
                 await self._stderr_queue.put(b"")
