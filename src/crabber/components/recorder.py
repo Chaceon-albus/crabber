@@ -3,7 +3,6 @@ import shutil
 
 import aiofiles
 
-from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from string import Template
@@ -14,6 +13,7 @@ from aiofiles.threadpool.binary import AsyncBufferedIOBase
 from crabber.crabber import Crabber
 from crabber.misc import safe_filename
 from crabber.components import empty_handler
+from crabber.ffmpeg import FFmpegProcess
 
 
 default_events = []
@@ -38,21 +38,19 @@ def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) ->
         if ffmpeg_path:=shutil.which("ffmpeg"):
             # use ffmpeg to write .mp4 file
             fn: Path | str | None = None
-            ffmpeg_stdin: asyncio.StreamWriter | None = None
-            ffmpeg_process: asyncio.subprocess.Process | None = None
+            ffmpeg: FFmpegProcess | None = None
 
             while True:
                 try:
                     data: bytes | None = await queue.get()
 
                     if data is None:
-                        if ffmpeg_process is not None or ffmpeg_stdin is not None:
+                        if ffmpeg is not None:
                             logger.info(f"stop recording: {fn}")
-                            await _gracefully_close_ffmpeg(ffmpeg_process, ffmpeg_stdin)
-                            ffmpeg_process = None
-                            ffmpeg_stdin = None
+                            await ffmpeg.close()
+                            ffmpeg = None
                     else:
-                        if ffmpeg_stdin is None or ffmpeg_stdin.is_closing():
+                        if ffmpeg is None or not ffmpeg.is_running:
                             # get dest filename
                             tmpl = Template(template)
                             fn = tmpl.safe_substitute({
@@ -63,36 +61,33 @@ def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) ->
                             fn = output_dir.joinpath(safe_filename(fn))
                             fn = _ensure_ext(fn, ".mp4")
 
-                            ffmpeg_process = await asyncio.create_subprocess_exec(
-                                ffmpeg_path, "-nostdin", "-y",
-                                "-i", "pipe:0", "-c", "copy",
-                                "-movflags", "empty_moov+default_base_moof+frag_keyframe",
-                                fn.resolve(),
-                                stdin=asyncio.subprocess.PIPE,
-                                stdout=asyncio.subprocess.DEVNULL,
-                                stderr=asyncio.subprocess.DEVNULL,
+                            ffmpeg = FFmpegProcess(
+                                args=[
+                                    "-nostdin", "-y",
+                                    "-i", "pipe:0", "-c", "copy",
+                                    "-movflags", "empty_moov+default_base_moof+frag_keyframe",
+                                    str(fn.resolve()),
+                                ],
+                                ffmpeg_path=ffmpeg_path,
+                                logger=logger,
                             )
-                            ffmpeg_stdin = ffmpeg_process.stdin
+                            await ffmpeg.start()
                             logger.info(f"start recording: {fn}")
 
-                        if ffmpeg_stdin is None:
-                            raise RuntimeError("failed to open ffmpeg stdin")
-
-                        ffmpeg_stdin.write(data)
-                        await ffmpeg_stdin.drain()
+                        await ffmpeg.write(data)
 
                 except asyncio.CancelledError:
                     logger.info("recorder task cancelled")
-                    await _gracefully_close_ffmpeg(ffmpeg_process, ffmpeg_stdin)
-                    ffmpeg_process = None
-                    ffmpeg_stdin = None
+                    if ffmpeg is not None:
+                        await ffmpeg.close()
+                        ffmpeg = None
                     return
 
                 except Exception as e:
                     logger.error(f"recorder error: {e}")
-                    await _gracefully_close_ffmpeg(ffmpeg_process, ffmpeg_stdin)
-                    ffmpeg_process = None
-                    ffmpeg_stdin = None
+                    if ffmpeg is not None:
+                        await ffmpeg.close()
+                        ffmpeg = None
 
         else:
             # directly write to .flv file
@@ -140,29 +135,3 @@ def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) ->
 def _ensure_ext(fn: Path, ext: str) -> Path:
     target_ext = ext if ext.startswith(".") else f".{ext}"
     return fn.with_suffix(target_ext) if fn.suffix.lower() != target_ext.lower() else fn
-
-
-async def _gracefully_close_ffmpeg(
-    process: asyncio.subprocess.Process | None,
-    stdin: asyncio.StreamWriter | None,
-    timeout: float = 10.0,
-) -> None:
-
-    if stdin is not None:
-        with suppress(BrokenPipeError, ConnectionResetError, OSError, RuntimeError):
-            if stdin.can_write_eof():
-                stdin.write_eof()
-
-    if process:
-        if stdin and not stdin.is_closing():
-            with suppress(BrokenPipeError, ConnectionResetError, OSError, RuntimeError):
-                stdin.close()
-                await stdin.wait_closed()
-
-        try:
-            await asyncio.wait_for(process.wait(), timeout=timeout)
-        except TimeoutError:
-            with suppress(ProcessLookupError):
-                process.kill()
-            with suppress(TimeoutError):
-                await asyncio.wait_for(process.wait(), timeout=5.0)
