@@ -265,7 +265,7 @@ class FFmpegProcess:
         """Background task to continuously read from stdout and queue data if queue is initialized."""
         try:
             while self._process and self._process.stdout:
-                chunk = await self._process.stdout.read(65536)
+                chunk = await self._process.stdout.read(32000) # 3.2k -> 200ms mono 16 kHz
                 if not chunk:
                     break
                 if self._stdout_queue is not None:

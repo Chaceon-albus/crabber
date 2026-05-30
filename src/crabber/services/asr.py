@@ -28,12 +28,13 @@ class AsrService(BaseService):
     def __init__(self, config: dict, logger: logging.Logger) -> None:
         self.config = config
         self.logger = logger
+        self.provider = self.config.get("provider")
 
     def new_session(
         self,
         fun_asr_callback: asr.RecognitionCallback | None = None,
     ) -> FunAsrSession | DoubaoAsrSession:
-        match provider:=self.config.get("provider"):
+        match self.provider:
             case "fun-asr":
                 if not fun_asr_callback:
                     raise ValueError(f"wanted RecognitionCallback for fun_asr_callback but got {type(fun_asr_callback)}")
@@ -44,7 +45,7 @@ class AsrService(BaseService):
             case "doubao-asr":
                 return DoubaoAsrSession()
             case _:
-                raise ValueError(f"unknown asr provider: {provider}")
+                raise ValueError(f"unknown asr provider: {self.provider}")
 
 
 
@@ -52,17 +53,6 @@ class AsrService(BaseService):
 class FunAsrSession:
 
     def __init__(self, callback: asr.RecognitionCallback, asr_params: dict) -> None:
-
-        # command = [
-        #     "ffmpeg",
-        #     "-loglevel", "quiet", "-hide_banner",
-        #     "-i", url,
-        #     "-vn",
-        #     "-ac", "1", # mono
-        #     "-ar", f"{sample_rate}",
-        #     "-acodec", codec,
-        #     "-f", "wav", "pipe:1",
-        # ]
 
         params = {
             "model": "fun-asr-realtime",
@@ -83,7 +73,11 @@ class FunAsrSession:
 
 
     async def stop(self) -> None:
-        await asyncio.to_thread(self.recognition.stop)
+        try:
+            await asyncio.to_thread(self.recognition.stop)
+        except Exception:
+            pass
+
         self.is_running = False
 
 
@@ -98,11 +92,21 @@ class FunAsrSession:
 
     def __del__(self):
         if self.is_running:
-            self.recognition.stop()
-            self.is_running = False
+            try:
+                self.recognition.stop()
+            except Exception:
+                pass
+            finally:
+                self.is_running = False
 
 
 class DoubaoAsrSession:
 
     def __init__(self) -> None:
         raise RuntimeError("not implemented")
+
+    async def stop(self) -> None:
+        pass
+
+    async def send_audio_frame(self, buffer: bytes) -> None:
+        pass
