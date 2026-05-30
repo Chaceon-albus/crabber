@@ -170,10 +170,10 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
         info = event.get("data", {}).get("info", {})
         if len(info) > 2 and len(info[2]) > 1:
             msg = info[1]
-            uid = info[2][0]
+            # uid = info[2][0]
             usr = info[2][1]
-            # skip self danmaku
-            if uid == ctx.cred_manager.uid: return
+            # # skip self danmaku
+            # if uid == ctx.cred_manager.uid: return
             user_events.append(f"{usr}：{msg}")
 
 
