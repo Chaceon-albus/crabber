@@ -127,8 +127,7 @@ class FFmpegProcess:
         if not self.ffmpeg_path:
             raise FileNotFoundError("ffmpeg executable not found in PATH or specified path is invalid")
 
-        self.logger.info(f"starting ffmpeg process: {self.ffmpeg_path} {' '.join(self.args)}")
-        self.logger.debug(f"process arguments: {self.ffmpeg_path} {' '.join(self.args)}")
+        self.logger.debug(f"starting ffmpeg process: {self.ffmpeg_path} {' '.join(self.args)}")
 
         self._process = await asyncio.create_subprocess_exec(
             self.ffmpeg_path,
@@ -216,7 +215,7 @@ class FFmpegProcess:
         if self._process is None:
             return 0
 
-        self.logger.info("closing ffmpeg process gracefully...")
+        self.logger.debug("closing ffmpeg process gracefully...")
 
         # 1. Write EOF to stdin if supported
         if self._process.stdin is not None:
