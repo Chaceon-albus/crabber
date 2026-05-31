@@ -57,7 +57,7 @@ CORE_GUARDRAILS = """
 1. 沉默状态：如果你评估后认为不需要回复，必须有且仅有输出：[SKIP] （包含方括号，无其他任何字符）。
 2. 回复状态：直接输出你要发送的弹幕内容，禁止包含任何Markdown标记。
    - 严格限制字数：单行弹幕（含标点）不超过40个字。
-   - 允许多行输出：可以使用换行符分多条发送，但总行数绝不能超过3行，且每行仍需严格在40字以内。
+   - 允许多行输出：只有在极端必要的时候，可以使用换行符分多条发送，但总行数绝不能超过2行，且每行仍需严格在40字以内。
 """.strip()
 
 
@@ -275,45 +275,62 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
         ctx.room_info.stream.subscribe(queue)
 
         nonlocal ffmpeg_process
-        while True:
-            try:
-                data: bytes | None = await queue.get()
-                if data is None:
+        try:
+            while True:
+                try:
+                    data: bytes | None = await queue.get()
+                    if data is None:
+                        if ffmpeg_process is not None:
+                            logger.info(f"stop encoding wav")
+                            await ffmpeg_process.close()
+                            ffmpeg_process = None
+                    else:
+                        if ffmpeg_process is None or not ffmpeg_process.is_running:
+                            ffmpeg_process = FFmpegProcess(
+                                args=[
+                                    "-hide_banner",
+                                    "-nostdin", "-y",
+                                    "-i", "pipe:0",
+                                    "-vn",
+                                    "-ac", "1", # mono
+                                    "-ar", f"{sample_rate}",
+                                    "-acodec", "pcm_s16le",
+                                    "-f", "wav", "pipe:1",
+                                ],
+                                ffmpeg_path=ffmpeg_path,
+                                logger=logger,
+                            )
+                            await ffmpeg_process.start()
+                            ffmpeg_event.set()
+                            logger.info("start to encode wav")
+
+                        await ffmpeg_process.write(data)
+                except asyncio.CancelledError:
+                    logger.info("iris encoder task cancelled")
                     if ffmpeg_process is not None:
-                        logger.info(f"stop encoding wav")
                         await ffmpeg_process.close()
                         ffmpeg_process = None
-                else:
-                    if ffmpeg_process is None or not ffmpeg_process.is_running:
-                        ffmpeg_process = FFmpegProcess(
-                            args=[
-                                "-hide_banner",
-                                "-nostdin", "-y",
-                                "-i", "pipe:0",
-                                "-vn",
-                                "-ac", "1", # mono
-                                "-ar", f"{sample_rate}",
-                                "-acodec", "pcm_s16le",
-                                "-f", "wav", "pipe:1",
-                            ],
-                            ffmpeg_path=ffmpeg_path,
-                            logger=logger,
-                        )
-                        await ffmpeg_process.start()
-                        ffmpeg_event.set()
-                        logger.info("start to encode wav")
+                    raise
+                except Exception as e:
+                    try:
+                        loop = asyncio.get_running_loop()
+                        if loop.is_closed():
+                            logger.info("event loop is closed, stopping encoder loop")
+                            break
+                    except Exception:
+                        pass
 
-                    await ffmpeg_process.write(data)
-            except asyncio.CancelledError:
-                logger.info("iris encoder task cancelled")
-                if ffmpeg_process is not None:
-                    await ffmpeg_process.close()
-                    ffmpeg_process = None
-            except Exception as e:
-                logger.error(f"iris error during encoding: {e}")
-                if ffmpeg_process is not None:
-                    await ffmpeg_process.close()
-                    ffmpeg_process = None
+                    logger.error(f"iris error during encoding: {e}")
+                    if ffmpeg_process is not None:
+                        await ffmpeg_process.close()
+                        ffmpeg_process = None
+                    await asyncio.sleep(1)
+        finally:
+            if ctx.room_info.stream is not None:
+                try:
+                    ctx.room_info.stream.unsubscribe(queue)
+                except Exception:
+                    pass
 
 
     async def _iris_transcriber() -> None:
@@ -341,8 +358,16 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
 
             except asyncio.CancelledError:
                 logger.info("iris transcriber task cancelled")
-                break
+                raise
             except Exception as e:
+                try:
+                    loop = asyncio.get_running_loop()
+                    if loop.is_closed():
+                        logger.info("event loop is closed, stopping transcriber loop")
+                        break
+                except Exception:
+                    pass
+
                 logger.error(f"iris error during transcription: {e}")
                 if ffmpeg_process is not None:
                     try:
