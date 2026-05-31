@@ -25,6 +25,11 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                 logger.debug(f"skip self danmaku from user {uid}")
                 return
 
+            # skip low-effort/spam number danmaku
+            if should_skip_danmu(msg):
+                logger.debug(f"skip spam/number danmaku: {usr}说: {msg}")
+                return
+
             logger.debug(f"{usr}说: {msg}")
 
             if ctx.db:
@@ -42,3 +47,23 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
             logger.debug(f"unknown DANMU_MSG event:\n{jsonify(event)}")
 
     return handler
+
+
+def should_skip_danmu(msg: str) -> bool:
+    if not isinstance(msg, str): return False
+
+    # If the message is purely numeric
+    if msg.isdigit():
+        # 1. Single digit 1-9
+        if len(msg) == 1:
+            return msg in "123456789"
+
+        # 2. Repeating digits (e.g., 111, 222, 333)
+        if len(set(msg)) == 1:
+            return True
+
+        # 3. Consecutive digit sequences of length >= 3 (e.g., 123, 234, 321, 4321)
+        if len(msg) >= 3 and (msg in "0123456789" or msg in "9876543210"):
+            return True
+
+    return False
