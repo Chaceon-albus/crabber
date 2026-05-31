@@ -73,11 +73,13 @@ class LlmChat:
             else:
                 self.history.append({"role": "system", "content": str(system_prompt)})
 
-    async def send_message(self, message: str) -> str:
+    async def send_message(self, message: str, system_prompt: str | None = None) -> str:
         """Send a message to the model and get a reply.
 
         Saves the message and the reply in the chat history.
         """
+        if system_prompt:
+            self.history.append({"role": "system", "content": system_prompt})
         self.history.append({"role": "user", "content": message})
 
         try:
@@ -99,5 +101,7 @@ class LlmChat:
         except Exception as e:
             self._logger.error(f"failed to send message to llm: {e}")
             if self.history and self.history[-1]["role"] == "user":
+                self.history.pop()
+            if system_prompt and self.history and self.history[-1]["role"] == "system":
                 self.history.pop()
             raise

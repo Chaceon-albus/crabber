@@ -151,5 +151,33 @@ class TestLlmService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(error_logs[0].startswith("failed to send message to llm"))
 
 
+    async def test_send_message_with_system_prompt_injection(self):
+        """Test sending a message with an injected system prompt, verifying history and rollback on failure."""
+        service = LlmService(self.config, self.logger)
+        chat = service.new_chat()
+
+        mock_response = MagicMock()
+        mock_choice = MagicMock()
+        mock_choice.message.content = "i hear you."
+        mock_response.choices = [mock_choice]
+        service.client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        # Successful call with system prompt injection
+        reply = await chat.send_message("hello", system_prompt="[system signal: allow break ice]")
+        self.assertEqual(reply, "i hear you.")
+        self.assertEqual(len(chat.history), 3)
+        self.assertEqual(chat.history[0], {"role": "system", "content": "[system signal: allow break ice]"})
+        self.assertEqual(chat.history[1], {"role": "user", "content": "hello"})
+        self.assertEqual(chat.history[2], {"role": "assistant", "content": "i hear you."})
+
+        # Failed call with system prompt injection, verifying rollback of both user and system messages
+        service.client.chat.completions.create = AsyncMock(side_effect=RuntimeError("api limit reached"))
+        with self.assertRaises(RuntimeError):
+            await chat.send_message("another message", system_prompt="[another signal]")
+
+        # History size should still be 3 (rollback deleted the new system and user messages)
+        self.assertEqual(len(chat.history), 3)
+
+
 if __name__ == "__main__":
     unittest.main()
