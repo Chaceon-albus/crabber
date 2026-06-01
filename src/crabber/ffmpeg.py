@@ -280,19 +280,33 @@ class FFmpegProcess:
     async def _read_stderr_loop(self) -> None:
         """Background task to continuously read stderr lines, log them, and queue them if queue is initialized."""
         try:
+            buffer = b""
             while self._process and self._process.stderr:
-                line = await self._process.stderr.readline()
-                if not line:
+                chunk = await self._process.stderr.read(4096)
+                if not chunk:
                     break
+                buffer += chunk
+                while b"\n" in buffer:
+                    line, buffer = buffer.split(b"\n", 1)
+                    line_with_newline = line + b"\n"
+                    # Keep stderr lines for error diagnostics
+                    decoded_line = line_with_newline.decode("utf-8", errors="replace").strip()
+                    if decoded_line:
+                        self._stderr_logs.append(decoded_line)
+                        self.logger.debug(f"ffmpeg stderr: {decoded_line}")
 
-                # Keep stderr lines for error diagnostics
-                decoded_line = line.decode("utf-8", errors="replace").strip()
+                    if self._stderr_queue is not None:
+                        await self._stderr_queue.put(line_with_newline)
+
+            # Handle any remaining data in the buffer after EOF
+            if buffer:
+                decoded_line = buffer.decode("utf-8", errors="replace").strip()
                 if decoded_line:
                     self._stderr_logs.append(decoded_line)
                     self.logger.debug(f"ffmpeg stderr: {decoded_line}")
 
                 if self._stderr_queue is not None:
-                    await self._stderr_queue.put(line)
+                    await self._stderr_queue.put(buffer)
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -307,3 +321,16 @@ class FFmpegProcess:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         await self.close()
+
+    def __del__(self) -> None:
+        # Cancel background tasks to avoid "Task was destroyed but it is pending" warning
+        try:
+            if hasattr(self, "_stdout_task") and self._stdout_task and not self._stdout_task.done():
+                self._stdout_task.cancel()
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "_stderr_task") and self._stderr_task and not self._stderr_task.done():
+                self._stderr_task.cancel()
+        except Exception:
+            pass

@@ -51,6 +51,8 @@ def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) ->
                             ffmpeg = None
                     else:
                         if ffmpeg is None or not ffmpeg.is_running:
+                            if ffmpeg is not None:
+                                await ffmpeg.close()
                             # get dest filename
                             tmpl = Template(template)
                             fn = tmpl.safe_substitute({

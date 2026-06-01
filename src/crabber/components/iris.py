@@ -4,7 +4,7 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Callable, Awaitable
+from typing import Callable, Awaitable, cast
 
 from bilibili_api import Danmaku
 from dashscope.audio.asr import RecognitionCallback as FunAsrCallback
@@ -96,11 +96,15 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
 
     iris_transcribe_event = asyncio.Event()
 
+    # Track ASR timedelta offset for retry mechanism
+    asr_offset = timedelta(seconds=0)
+    last_speech_end = timedelta(seconds=0)
+
 
     config = config or {}
 
     last_danmaku_time = datetime.now()
-    max_silence_seconds = config.get("max_silence_seconds", 900) # default 15 minutes
+    max_silence_seconds = config.get("max_silence_seconds", 1800) # default 30 minutes
 
     system_prompt: list[str] = []
 
@@ -130,13 +134,36 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
         def on_error(self, result: FunAsrResult) -> None:
             logger.error(f"fun-asr error: {result.message} (req_id: {result.request_id})")
 
-            # TODO: robust error handling
             async def _handle_error():
-                nonlocal asr_session
+                nonlocal asr_session, asr_offset, last_speech_end
                 if asr_session:
-                    logger.warning("stop asr session due to callback error...")
-                    await asr_session.stop()
+                    logger.warning("stop asr session due to callback error and schedule retry...")
+                    try:
+                        await asr_session.stop()
+                    except Exception as stop_err:
+                        logger.error(f"failed to stop failed ASR session: {stop_err}")
                     asr_session = None
+
+                # Update the ASR offset for the next session
+                asr_offset += last_speech_end
+                last_speech_end = timedelta(seconds=0) # Reset last_speech_end for the new session
+                logger.info(f"updated ASR offset to {asr_offset}, scheduling retry...")
+
+                # Wait 2 seconds to avoid infinite tight loops on persistent failures
+                await asyncio.sleep(2)
+
+                if ctx.room_info.is_online:
+                    logger.info("retrying and starting new ASR session...")
+                    try:
+                        match asr_service.provider:
+                            case "fun-asr":
+                                asr_session = asr_service.new_session(
+                                    fun_asr_callback=IrisFunAsrCallback(),
+                                )
+                            case _:
+                                logger.warning(f"unsupported ASR provider for retry: {asr_service.provider}")
+                    except Exception as start_err:
+                        logger.error(f"failed to restart ASR session: {start_err}")
 
             if ctx.loop and ctx.loop.is_running():
                 ctx.loop.call_soon_threadsafe(
@@ -152,16 +179,24 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
                 if not content: return
 
                 if FunAsrResult.is_sentence_end(sentence):
+                    nonlocal asr_offset, last_speech_end
                     speech_begin = timedelta(milliseconds=sentence.get("begin_time", 0))
                     speech_end = timedelta(milliseconds=sentence.get("end_time", 1000))
 
+                    # Track the last successfully recognized end time in the current session
+                    last_speech_end = speech_end
+
+                    # Apply the offset to get the real time within the stream
+                    real_begin = asr_offset + speech_begin
+                    real_end = asr_offset + speech_end
+
                     # TODO: use debug level
-                    logger.debug(f"{speech_begin} -> {speech_end}: {content}")
+                    logger.debug(f"{real_begin} -> {real_end}: {content}")
 
                     speech = Speech(
                         content=content,
-                        begin=speech_begin,
-                        end=speech_end,
+                        begin=real_begin,
+                        end=real_end,
                     )
 
                     if ctx.loop and ctx.loop.is_running():
@@ -183,6 +218,9 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
     if not (isinstance(asr, AsrService) and isinstance(llm, LlmService)):
         logger.warning("asr or llm service not configured, skip iris")
         return empty_handler
+
+    asr_service = cast(AsrService, asr)
+    llm_service = cast(LlmService, llm)
 
     if not (ffmpeg_path:=shutil.which("ffmpeg")):
         logger.warning("ffmpeg not found, skip iris")
@@ -243,27 +281,31 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
 
     async def _iris_online(_: RoomInfo) -> None:
         nonlocal asr_session
-        match asr.provider:
+        match asr_service.provider:
             case "fun-asr":
-                asr_session = asr.new_session(
+                asr_session = asr_service.new_session(
                     fun_asr_callback=IrisFunAsrCallback(),
                 )
 
             case "doubao-asr":
-                logger.warning(f"{asr.provider} not implemented")
+                logger.warning(f"{asr_service.provider} not implemented")
 
             case _:
-                logger.warning(f"unknown asr provider {asr.provider}")
+                logger.warning(f"unknown asr provider {asr_service.provider}")
 
-        nonlocal speech_list, speech_pos, user_events, event_pos, llm_chat, last_danmaku_time
+        nonlocal speech_list, speech_pos, user_events, event_pos, llm_chat, last_danmaku_time, asr_offset, last_speech_end
         speech_list.clear()
         user_events.clear()
         speech_pos = 0
         event_pos = 0
         last_danmaku_time = datetime.now()
 
+        # Reset ASR offset and last recognized speech time when stream starts
+        asr_offset = timedelta(seconds=0)
+        last_speech_end = timedelta(seconds=0)
+
         # old_chat = llm_chat
-        llm_chat = llm.new_chat(system_prompt=system_prompt)
+        llm_chat = llm_service.new_chat(system_prompt=system_prompt)
 
 
     async def _iris_offline(_: RoomInfo) -> None:
@@ -314,6 +356,8 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
                             ffmpeg_process = None
                     else:
                         if ffmpeg_process is None or not ffmpeg_process.is_running:
+                            if ffmpeg_process is not None:
+                                await ffmpeg_process.close()
                             ffmpeg_process = FFmpegProcess(
                                 args=[
                                     "-hide_banner",
