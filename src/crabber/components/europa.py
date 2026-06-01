@@ -28,8 +28,7 @@ def get_handler(ctx: Crabber, groups: list[int] | None = None, users: list[int] 
 
 
     async def on_lot_start(event: dict) -> None:
-        # TODO: move to debug level
-        logger.info(f"天选时刻开始事件：\n{jsonify(event)}")
+        logger.debug(f"天选时刻开始事件：\n{jsonify(event)}")
 
         try:
             data: dict = event.get("data", {}).get("data", {})
@@ -43,8 +42,7 @@ def get_handler(ctx: Crabber, groups: list[int] | None = None, users: list[int] 
 
 
     async def on_lot_award(event: dict) -> None:
-        # TODO: move to debug level
-        logger.info(f"天选时刻中奖事件：\n{jsonify(event)}")
+        logger.debug(f"天选时刻中奖事件：\n{jsonify(event)}")
 
         try:
             data: dict = event.get("data", {}).get("data", {})
@@ -59,9 +57,9 @@ def get_handler(ctx: Crabber, groups: list[int] | None = None, users: list[int] 
             danmu = anchor_record.pop(lot_id, "[UNKNOWN]")
 
             if len(users) > 1:
-                brief = f"下列用户在天选时刻{lot_id}中通过发送“{danmu}”获得了 {award}×{num}：\n"
+                brief = f"下列用户在天选时刻({lot_id})中通过发送“{danmu}”获得了 {award}×{num}：\n"
             else:
-                brief = f"天选时刻{lot_id}中发送“{danmu}”并获得 {award}×{num} 的幸运儿是："
+                brief = f"天选时刻({lot_id})中发送“{danmu}”并获得 {award}×{num} 的幸运儿是："
 
             brief += "\n".join([
                 f"{user.get('uname', '[UNKNOWN]')} (uid: {user.get('uid', -1)})"
