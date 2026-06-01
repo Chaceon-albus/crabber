@@ -1,5 +1,6 @@
 import asyncio
 import shutil
+import weakref
 from collections import deque
 from contextlib import suppress
 import logging
@@ -143,8 +144,8 @@ class FFmpegProcess:
         self._stderr_queue = None
 
         # Start background tasks to consume stdout and stderr to prevent blocking
-        self._stdout_task = asyncio.create_task(self._read_stdout_loop())
-        self._stderr_task = asyncio.create_task(self._read_stderr_loop())
+        self._stdout_task = asyncio.create_task(self._read_stdout_loop(weakref.ref(self)))
+        self._stderr_task = asyncio.create_task(self._read_stderr_loop(weakref.ref(self)))
 
     async def write(self, data: bytes) -> None:
         """Write binary data to FFmpeg's stdin and drain the writer buffer.
@@ -229,7 +230,18 @@ class FFmpegProcess:
                     self._process.stdin.close()
                     await self._process.stdin.wait_closed()
 
-        # 3. Wait for process exit or force kill on timeout
+        # 3. Clean up background reader tasks first to close pipe transports and prevent proactor hang on Windows
+        if self._stdout_task and not self._stdout_task.done():
+            self._stdout_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._stdout_task
+
+        if self._stderr_task and not self._stderr_task.done():
+            self._stderr_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._stderr_task
+
+        # 4. Wait for process exit or force kill on timeout
         try:
             returncode = await asyncio.wait_for(self._process.wait(), timeout=timeout)
         except (asyncio.TimeoutError, TimeoutError):
@@ -244,76 +256,133 @@ class FFmpegProcess:
                 self.logger.error("ffmpeg process could not be killed.")
                 returncode = -1
 
-        # 4. Clean up background reader tasks
-        if self._stdout_task and not self._stdout_task.done():
-            self._stdout_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._stdout_task
-
-        if self._stderr_task and not self._stderr_task.done():
-            self._stderr_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._stderr_task
-
         # 5. Clear reference
         self._process = None
         self.logger.debug(f"ffmpeg process stopped with return code: {returncode}")
         return returncode
 
-    async def _read_stdout_loop(self) -> None:
+    @staticmethod
+    async def _read_stdout_loop(self_ref: weakref.ReferenceType["FFmpegProcess"]) -> None:
         """Background task to continuously read from stdout and queue data if queue is initialized."""
+        self = self_ref()
+        if self is None:
+            return
+        logger = self.logger
+        self = None
+
         try:
-            while self._process and self._process.stdout:
-                chunk = await self._process.stdout.read(32000) # 3.2k -> 200ms mono 16 kHz
+            while True:
+                self = self_ref()
+                if self is None or self._process is None or self._process.stdout is None:
+                    break
+                stdout_stream = self._process.stdout
+                self = None
+
+                chunk = await stdout_stream.read(32000) # 3.2k -> 200ms mono 16 kHz
                 if not chunk:
                     break
+
+                self = self_ref()
+                if self is None:
+                    break
+
                 if self._stdout_queue is not None:
-                    await self._stdout_queue.put(chunk)
+                    q = self._stdout_queue
+                    self = None
+                    await q.put(chunk)
+                else:
+                    self = None
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            self.logger.error(f"error reading ffmpeg stdout: {e}")
+            logger.error(f"error reading ffmpeg stdout: {e}")
         finally:
-            if self._stdout_queue is not None:
-                await self._stdout_queue.put(b"")
+            self = self_ref()
+            if self is not None and self._stdout_queue is not None:
+                q = self._stdout_queue
+                try:
+                    q.put_nowait(b"")
+                except asyncio.QueueFull:
+                    try:
+                        q.get_nowait()
+                        q.put_nowait(b"")
+                    except Exception:
+                        pass
 
-    async def _read_stderr_loop(self) -> None:
+    @staticmethod
+    async def _read_stderr_loop(self_ref: weakref.ReferenceType["FFmpegProcess"]) -> None:
         """Background task to continuously read stderr lines, log them, and queue them if queue is initialized."""
+        self = self_ref()
+        if self is None:
+            return
+        logger = self.logger
+        self = None
+
         try:
             buffer = b""
-            while self._process and self._process.stderr:
-                chunk = await self._process.stderr.read(4096)
+            while True:
+                self = self_ref()
+                if self is None or self._process is None or self._process.stderr is None:
+                    break
+                stderr_stream = self._process.stderr
+                self = None
+
+                chunk = await stderr_stream.read(4096)
                 if not chunk:
                     break
+
                 buffer += chunk
                 while b"\n" in buffer:
                     line, buffer = buffer.split(b"\n", 1)
                     line_with_newline = line + b"\n"
-                    # Keep stderr lines for error diagnostics
+
+                    self = self_ref()
+                    if self is None:
+                        break
+
                     decoded_line = line_with_newline.decode("utf-8", errors="replace").strip()
                     if decoded_line:
                         self._stderr_logs.append(decoded_line)
-                        self.logger.debug(f"ffmpeg stderr: {decoded_line}")
+                        logger.debug(f"ffmpeg stderr: {decoded_line}")
 
                     if self._stderr_queue is not None:
-                        await self._stderr_queue.put(line_with_newline)
+                        q = self._stderr_queue
+                        self = None
+                        await q.put(line_with_newline)
+                    else:
+                        self = None
 
             # Handle any remaining data in the buffer after EOF
             if buffer:
-                decoded_line = buffer.decode("utf-8", errors="replace").strip()
-                if decoded_line:
-                    self._stderr_logs.append(decoded_line)
-                    self.logger.debug(f"ffmpeg stderr: {decoded_line}")
+                self = self_ref()
+                if self is not None:
+                    decoded_line = buffer.decode("utf-8", errors="replace").strip()
+                    if decoded_line:
+                        self._stderr_logs.append(decoded_line)
+                        logger.debug(f"ffmpeg stderr: {decoded_line}")
 
-                if self._stderr_queue is not None:
-                    await self._stderr_queue.put(buffer)
+                    if self._stderr_queue is not None:
+                        q = self._stderr_queue
+                        self = None
+                        await q.put(buffer)
+                    else:
+                        self = None
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            self.logger.error(f"error reading ffmpeg stderr: {e}")
+            logger.error(f"error reading ffmpeg stderr: {e}")
         finally:
-            if self._stderr_queue is not None:
-                await self._stderr_queue.put(b"")
+            self = self_ref()
+            if self is not None and self._stderr_queue is not None:
+                q = self._stderr_queue
+                try:
+                    q.put_nowait(b"")
+                except asyncio.QueueFull:
+                    try:
+                        q.get_nowait()
+                        q.put_nowait(b"")
+                    except Exception:
+                        pass
 
     async def __aenter__(self) -> "FFmpegProcess":
         await self.start()
@@ -323,7 +392,12 @@ class FFmpegProcess:
         await self.close()
 
     def __del__(self) -> None:
-        # Cancel background tasks to avoid "Task was destroyed but it is pending" warning
+        # Forcibly kill the subprocess and cancel tasks if still running to prevent resource leaks
+        try:
+            if hasattr(self, "_process") and self._process and self._process.returncode is None:
+                self._process.kill()
+        except Exception:
+            pass
         try:
             if hasattr(self, "_stdout_task") and self._stdout_task and not self._stdout_task.done():
                 self._stdout_task.cancel()
