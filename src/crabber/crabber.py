@@ -16,7 +16,7 @@ from crabber.credential import CredentialManager
 from crabber.room_info import RoomInfo
 from crabber.misc import jsonify, safe_ts, check_exceptions
 from crabber.database import Database
-from crabber.live_stream import LiveStream, StreamStatus
+from crabber.live_stream import LiveStreamManager, StreamStatus
 from crabber.services import BaseService, init_services
 from crabber.task_manager import TaskManager
 
@@ -214,7 +214,7 @@ class Crabber:
         self.danmaku.logger = self.logger.getChild("Danmaku")
         self.danmaku.logger.setLevel(logging.INFO)
 
-        self.room_info.stream = LiveStream(ctx=self)
+        self.room_info.stream = LiveStreamManager(ctx=self)
 
         await self._update_room_info() # update room_info once before self.start()
 
@@ -362,7 +362,7 @@ class Crabber:
                 self.logger.debug(f"ignoring live status related event: {room_real_id} != {self.room_id}\n{jsonify(event)}")
                 return
 
-            if self.room_info.stream is None: self.room_info.stream = LiveStream(ctx=self) # make linter happy
+            if self.room_info.stream is None: self.room_info.stream = LiveStreamManager(ctx=self) # make linter happy
 
             data = event.get("data", {})
             cmd = data.get("cmd", "")

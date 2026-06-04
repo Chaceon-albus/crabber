@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from crabber.live_stream import LiveStream
+    from crabber.live_stream import LiveStreamManager
 
 
 @dataclass
@@ -21,7 +21,7 @@ class RoomInfo:
     start_time: datetime = datetime.now()
     end_time: datetime = datetime.now()
 
-    stream: LiveStream | None = None
+    stream: LiveStreamManager | None = None
 
 
 if __name__ == "__main__":

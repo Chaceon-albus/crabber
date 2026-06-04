@@ -22,6 +22,74 @@ class StreamStatus(Enum):
 
 class LiveStream:
 
+    def __init__(
+        self,
+        manager: LiveStreamManager,
+        protocol_name: str,
+        format_name: str,
+        codec_name: str,
+        qn: int,
+        urls: list[str],
+    ) -> None:
+
+        self.manager = manager
+        self.protocol_name = protocol_name
+        self.format_name = format_name
+        self.codec_name = codec_name
+        self.qn = qn
+        self.urls = urls
+
+
+    async def download(
+        self,
+        timeout: aiohttp.ClientTimeout | None = None,
+    ) -> aiohttp.ClientResponse | None:
+
+        manager = self.manager
+        ctx = manager.ctx
+
+        timeout = timeout or aiohttp.ClientTimeout(
+            total=None,
+            connect=10.0,
+            sock_read=30.0, # in case of network issues or cdn hiccups
+            sock_connect=10.0
+        )
+
+        if not manager.client:
+            headers = {
+                "Origin": "https://live.bilibili.com",
+                "Referer": f"https://live.bilibili.com/{ctx.room_info.id}",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+                "Connection": "keep-alive",
+            }
+            manager.client = aiohttp.ClientSession(headers=headers, timeout=timeout)
+
+        for url in self.urls:
+            ctx.logger.debug(f"start to download stream: {url}")
+
+            resp = None
+            try:
+                resp = await manager.client.get(url, timeout=timeout, ssl=False) # some cdn may have invalid ssl certs
+                resp.raise_for_status()
+            except aiohttp.ClientResponseError as e:
+                # when the stream is not ready or accidentally stopped, resp got 404,
+                # retry silently in this case instead of throwing many warnings
+                if e.status not in [404]:
+                    url_str = str(e.request_info.url) if e.request_info and e.request_info.url else "unknown url"
+                    url_str = (url_str[:50] + "...") if len(url_str) > 50 else url_str
+                    ctx.logger.warning(f"failed to download stream: {e.status} {e.message} ({url_str})")
+                if resp is not None: resp.release()
+            except Exception as e:
+                ctx.logger.warning(f"failed to download stream: {e}")
+                if resp is not None: resp.release()
+            else:
+                return resp
+
+        return None
+
+
+class LiveStreamManager:
+
     def __init__(self, ctx: Crabber) -> None:
         self.ctx = ctx
 
@@ -34,23 +102,65 @@ class LiveStream:
         self.subscribers: list[asyncio.Queue] = []
 
 
-    async def get_live_streams(self) -> list[str]:
-        urls = []
+    async def get_live_streams(self) -> list[LiveStream]:
+
+        streams = []
+
+        if not self.ctx.room:
+            self.ctx.logger.warning(f"LiveRoom not configured")
+            return streams
 
         try:
-            resp: dict = await self.ctx.room.get_room_play_url() # type: ignore
+            resp: dict = await self.ctx.room.get_room_play_info_v2()
         except Exception as e:
             self.ctx.logger.error(f"failed to fetch live streams: {e}")
         else:
-            current_qn = resp.get("current_qn", resp.get("current_quality", resp.get("qn", "unknown")))
-            quality_name = _format_screen_resolution(current_qn)
-            accept_quality = resp.get("accept_quality", [])
-            self.ctx.logger.info(
-                f"live stream quality: {quality_name} ({current_qn}), accept_quality={accept_quality}"
-            )
-            urls = [d.get("url") for d in resp.get("durl", []) if "url" in d]
+            playurl_info = resp.get("playurl_info", {}) or {}
+            playurl = playurl_info.get("playurl", {}) or {}
+            expected_quality = playurl.get("expected_quality", {}) or {}
+            current_qn = expected_quality.get("qn", "unknown")
+            g_qn_desc = playurl.get("g_qn_desc", []) or []
+            quality_name = _format_screen_resolution(current_qn, g_qn_desc)
+            accept_quality = [q.get("qn") for q in g_qn_desc if q and "qn" in q]
 
-        return urls
+            stream_list = playurl.get("stream", []) or []
+            for stream_info in stream_list:
+                protocol_name = stream_info.get("protocol_name", "")
+                for format_info in stream_info.get("format", []) or []:
+                    format_name = format_info.get("format_name", "")
+                    for codec_info in format_info.get("codec", []) or []:
+                        codec_name = codec_info.get("codec_name", "")
+                        qn = codec_info.get("current_qn")
+                        base_url = codec_info.get("base_url", "")
+                        urls = []
+                        for url_info in codec_info.get("url_info", []) or []:
+                            host = url_info.get("host", "")
+                            extra = url_info.get("extra", "")
+                            if host and base_url:
+                                urls.append(f"{host}{base_url}{extra}")
+                        if urls:
+                            streams.append(
+                                LiveStream(
+                                    manager=self,
+                                    protocol_name=protocol_name,
+                                    format_name=format_name,
+                                    codec_name=codec_name,
+                                    qn=qn,
+                                    urls=urls,
+                                )
+                            )
+
+            protocols = set(s.protocol_name for s in streams)
+            formats = set(s.format_name for s in streams)
+            codecs = set(s.codec_name for s in streams)
+
+            self.ctx.logger.info(
+                f"live stream quality: {quality_name} ({current_qn}), "
+                f"accept_quality={accept_quality}, "
+                f"protocols={list(protocols)}, formats={list(formats)}, codecs={list(codecs)}"
+            )
+
+        return streams
 
 
     def subscribe(self, q: asyncio.Queue | None = None) -> asyncio.Queue:
@@ -69,53 +179,6 @@ class LiveStream:
             pass
         except Exception as e:
             self.ctx.logger.error(f"failed to notify subscriber: {e}")
-
-
-    async def download_stream(
-        self,
-        urls: list[str] | None = None,
-        timeout: aiohttp.ClientTimeout | None = None,
-    ) -> aiohttp.ClientResponse | None:
-
-        streams = urls if urls is not None else await self.get_live_streams()
-        timeout = timeout or aiohttp.ClientTimeout(
-            total=None,
-            connect=10.0,
-            sock_read=30.0, # in case of network issues or cdn hiccups
-            sock_connect=10.0
-        )
-
-        if not self.client:
-            headers = {
-                "Origin": "https://live.bilibili.com",
-                "Referer": f"https://live.bilibili.com/{self.ctx.room_info.id}",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
-                "Connection": "keep-alive",
-            }
-            self.client = aiohttp.ClientSession(headers=headers, timeout=timeout)
-
-        for stream in streams:
-            self.ctx.logger.debug(f"start to download stream: {stream}")
-
-            resp = None
-            try:
-                resp = await self.client.get(stream, timeout=timeout, ssl=False) # some cdn may have invalid ssl certs
-                resp.raise_for_status()
-            except aiohttp.ClientResponseError as e:
-                # when the stream is not ready or accidentally stopped, resp got 404,
-                # retry silently in this case instead of throwing many warnings
-                if e.status not in [404]:
-                    url_str = str(e.request_info.url) if e.request_info and e.request_info.url else "unknown url"
-                    url_str = (url_str[:50] + "...") if len(url_str) > 50 else url_str
-                    self.ctx.logger.warning(f"failed to download stream: {e.status} {e.message} ({url_str})")
-                if resp is not None: resp.release()
-            except Exception as e:
-                self.ctx.logger.warning(f"failed to download stream: {e}")
-                if resp is not None: resp.release()
-            else:
-                return resp
-
-        return None
 
 
     def get_streaming_handler(self, retry_delay: float = 10.0) -> Callable[[RoomInfo], asyncio._CoroutineLike]:
@@ -157,8 +220,14 @@ class LiveStream:
                             # any attempt will update the last_retry_time
                             last_retry_time = datetime.now()
 
-                            if (stream_urls := await self.get_live_streams()):
-                                if (stream:=await self.download_stream(urls=stream_urls)) is not None:
+                            if (streams := await self.get_live_streams()):
+                                # Filter out HLS streams
+                                http_streams = [s for s in streams if s.protocol_name == "http_stream"]
+                                for s in http_streams:
+                                    if (stream := await s.download()) is not None:
+                                        break
+
+                                if stream is not None:
                                     # reset failure counter & flag on success
                                     failure_counter = 0
                                     failure_flag = False
@@ -244,11 +313,17 @@ class LiveStream:
             await self.client.close()
 
 
-def _format_screen_resolution(qn: int | str) -> str:
+def _format_screen_resolution(qn: int | str, g_qn_desc: list[dict] | None = None) -> str:
     try:
         qn = int(qn)
     except (TypeError, ValueError):
         return "unknown"
+
+    if g_qn_desc:
+        for q in g_qn_desc:
+            if isinstance(q, dict) and q.get("qn") == qn:
+                if (desc := q.get("desc")):
+                    return desc
 
     for resolution in ScreenResolution:
         if resolution.value == qn:
