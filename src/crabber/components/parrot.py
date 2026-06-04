@@ -170,7 +170,7 @@ def get_handler(
         else:
             await asyncio.sleep(1)
 
-        # try to pay a coin
+        # try to pay coin(s) if it's a video
         try:
             modules = item.get("modules") or {}
             module_dynamic = modules.get("module_dynamic") or {}
@@ -180,13 +180,23 @@ def get_handler(
 
             if bvid:
                 v = Video(bvid, credential=dn.credential)
+                accept_coin_num = 1
+
+                try:
+                    v_info = await v.get_info()
+                    copyright = int(v_info.get("copyright", 3))
+                    if copyright == 1:
+                        accept_coin_num = 2
+                except Exception as e:
+                    logger.warning(f"failed to get video info for {bvid}: {e}")
+
                 _ = await asyncio.gather(
-                    v.pay_coin(1),
+                    v.pay_coin(accept_coin_num),
                     v.set_favorite(add_media_ids=favlists),
                     return_exceptions=True,
                 )
         except Exception as e:
-            logger.info(f"failed to pay coin and set favorite: {e}")
+            logger.info(f"failed to pay coin(s) and set favorite: {e}")
 
 
     ctx.scheduler.add_job( # type: ignore
