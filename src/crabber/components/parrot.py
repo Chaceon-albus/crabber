@@ -155,7 +155,7 @@ def get_handler(
                         logger.debug(f"added dynamic {id_str} into memory, reason: forward success")
 
             except Exception as e:
-                logger.error(f"failed to fetch new dynamics: {e}")
+                logger.error(f"failed to fetch new dynamics: {e!r}")
             finally:
                 await asyncio.sleep(cooldown)
 

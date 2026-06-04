@@ -239,7 +239,7 @@ class Crabber:
                 try:
                     room_info = await self.room.get_room_info() # type: ignore
                 except Exception as e:
-                    self.logger.exception(f"[{attempt}/{max_attempt}] failed to update room info: {e}")
+                    self.logger.error(f"[{attempt}/{max_attempt}] failed to update room info: {e!r}")
                     await asyncio.sleep(3*attempt) # 3s, 6s, 9s
 
             anchor_info = room_info.get("anchor_info", {})
