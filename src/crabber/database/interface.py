@@ -23,5 +23,5 @@ class BaseAdapter:
     async def get_latest_live_record(self, room_id: int) -> Dict[str, Any] | None:
         pass
 
-    async def get_gift_summary(self, room_id: int, start_timestamp: datetime) -> Dict[str, Decimal]:
+    async def get_gift_summary(self, room_id: int, start_timestamp: datetime) -> Dict[str, Decimal] | None:
         pass

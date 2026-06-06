@@ -29,7 +29,7 @@ class StringDecimal(types.TypeDecorator):
 
 
 class GiftRecord(SQLModel, table=True):
-    __tablename__ = "gift_record"
+    __tablename__ = "gift_record"  # type: ignore
 
     id: int | None = Field(default=None, primary_key=True)
     room_id: int
@@ -43,7 +43,7 @@ class GiftRecord(SQLModel, table=True):
 
 
 class DanmakuRecord(SQLModel, table=True):
-    __tablename__ = "danmaku_record"
+    __tablename__ = "danmaku_record"  # type: ignore
 
     id: int | None = Field(default=None, primary_key=True)
     room_id: int
@@ -56,7 +56,7 @@ class DanmakuRecord(SQLModel, table=True):
 
 
 class LiveRecord(SQLModel, table=True):
-    __tablename__ = "live_record"
+    __tablename__ = "live_record"  # type: ignore
 
     id: int | None = Field(default=None, primary_key=True)
     room_id: int

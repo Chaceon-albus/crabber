@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
-from sqlmodel import SQLModel, select
+from sqlmodel import SQLModel, select, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from crabber.database.interface import BaseAdapter
@@ -109,7 +109,7 @@ class SqliteAdapter(BaseAdapter):
     async def get_latest_live_record(self, room_id: int) -> dict[str, Any] | None:
         await self._ensure_init()
         async with AsyncSession(self._engine) as session:
-            statement = select(LiveRecord).where(LiveRecord.room_id == room_id).order_by(LiveRecord.start_time.desc()).limit(1)
+            statement = select(LiveRecord).where(LiveRecord.room_id == room_id).order_by(col(LiveRecord.start_time).desc()).limit(1)
             record = (await session.exec(statement)).first()
             if record:
                 return {
@@ -122,7 +122,7 @@ class SqliteAdapter(BaseAdapter):
     async def get_gift_summary(self, room_id: int, start_timestamp: datetime) -> dict[str, Decimal]:
         await self._ensure_init()
         async with AsyncSession(self._engine) as session:
-            statement = select(GiftRecord.gift, GiftRecord.total_value).where(
+            statement = select(col(GiftRecord.gift), col(GiftRecord.total_value)).where(
                 GiftRecord.room_id == room_id,
                 GiftRecord.timestamp >= int(start_timestamp.timestamp())
             )
