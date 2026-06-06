@@ -106,12 +106,13 @@ def get_handler(
                         if (pub_ts:=dynamic.get("modules", {}).get("module_author", {}).get("pub_ts", "")):
                             try:
                                 pub_time = datetime.fromtimestamp(int(pub_ts))
-                                if (time_shift:=(datetime.now() - pub_time)).total_seconds() > 2 * interval:
-                                    # likely to be published before the program start
-                                    # since it's too long time ago, simple ignore it
+
+                                if (ctx.init_time - pub_time).total_seconds() > interval:
+                                    # ignore the dynamic which is published before the interval ahead of program start
                                     dynamic_memory[id_str] = True
-                                    logger.debug(f"added dynamic {id_str} into memory, reason: {time_shift} > {2*interval}s")
+                                    logger.debug(f"added dynamic {id_str} into memory, reason: {pub_time} is before {ctx.init_time}")
                                     continue
+
                             except Exception as e:
                                 logger.error("failed to check publish date: {e}")
 

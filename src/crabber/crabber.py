@@ -76,6 +76,7 @@ class Crabber:
             name=f"Thread-{self.name}",
             daemon=True,
         )
+        self.__init_time = datetime.now()
         self.thread.start()
 
         self._is_ready.wait() # wait until the thread is ready
@@ -264,6 +265,9 @@ class Crabber:
             self.logger.exception(f"failed to write room info: {e}")
         else:
             self.logger.debug(f"update room info: {self.room_info}")
+        finally:
+            if self.uid < 0:
+                logger.warning("failed to update uid via get_room_info()")
 
 
     async def _keep_danmaku_connected(self) -> None:
@@ -443,6 +447,10 @@ class Crabber:
     def has_credential(self) -> bool:
         room = self.room
         return True if room and room.credential.has_sessdata() else False
+
+    @property
+    def init_time(self) -> datetime:
+        return self.__init_time
 
 
     async def _check_live_status(self) -> None:
