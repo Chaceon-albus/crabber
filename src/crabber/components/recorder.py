@@ -63,10 +63,23 @@ def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) ->
                             fn = output_dir.joinpath(safe_filename(fn))
                             fn = _ensure_ext(fn, ".mp4")
 
+                            input_args = ["-i", "pipe:0"]
+
+                            if ctx.room_info.stream is not None and ctx.room_info.stream.current_format:
+                                fmt = ctx.room_info.stream.current_format
+                                if fmt == "flv":
+                                    input_args = ["-f", "flv", "-i", "pipe:0"]
+                                elif fmt == "ts":
+                                    input_args = ["-f", "mpegts", "-i", "pipe:0"]
+                                elif fmt == "fmp4":
+                                    input_args = ["-f", "mov", "-i", "pipe:0"]
+
                             ffmpeg = FFmpegProcess(
                                 args=[
+                                    "-hide_banner",
                                     "-nostdin", "-y",
-                                    "-i", "pipe:0", "-c", "copy",
+                                    *input_args, # may get different input type
+                                    "-c", "copy",
                                     "-movflags", "empty_moov+default_base_moof+frag_keyframe",
                                     str(fn.resolve()),
                                 ],

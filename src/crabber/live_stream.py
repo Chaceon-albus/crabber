@@ -100,6 +100,7 @@ class LiveStreamManager:
         self.client: aiohttp.ClientSession | None = None
         self.dispatcher: asyncio.Task | None = None
         self.subscribers: list[asyncio.Queue] = []
+        self.current_format: str | None = None
 
 
     async def get_live_streams(self) -> list[LiveStream]:
@@ -219,12 +220,17 @@ class LiveStreamManager:
 
                             # any attempt will update the last_retry_time
                             last_retry_time = datetime.now()
+                            self.current_format = None
 
                             if (streams := await self.get_live_streams()):
-                                # Filter out HLS streams
+                                # Filter out HLS streams and sort by format preference (flv > ts > fmp4)
+                                format_pref = {"flv": 0, "ts": 1, "fmp4": 2}
                                 http_streams = [s for s in streams if s.protocol_name == "http_stream"]
+                                http_streams.sort(key=lambda s: format_pref.get(s.format_name, 99))
+
                                 for s in http_streams:
                                     if (stream := await s.download()) is not None:
+                                        self.current_format = s.format_name
                                         break
 
                                 if stream is not None:
@@ -232,7 +238,7 @@ class LiveStreamManager:
                                     failure_counter = 0
                                     failure_flag = False
                                     # start to dispatch the stream
-                                    ctx.logger.debug(f"successfully start downloading live stream, start dispatching")
+                                    ctx.logger.debug(f"successfully start downloading live stream ({self.current_format}), start dispatching")
                                     await self._dispatch(stream)
                                 else:
                                     # failed: no stream

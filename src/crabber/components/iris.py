@@ -358,11 +358,23 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
                         if ffmpeg_process is None or not ffmpeg_process.is_running:
                             if ffmpeg_process is not None:
                                 await ffmpeg_process.close()
+
+                            input_args = ["-i", "pipe:0"]
+
+                            if ctx.room_info.stream is not None and ctx.room_info.stream.current_format:
+                                fmt = ctx.room_info.stream.current_format
+                                if fmt == "flv":
+                                    input_args = ["-f", "flv", "-i", "pipe:0"]
+                                elif fmt == "ts":
+                                    input_args = ["-f", "mpegts", "-i", "pipe:0"]
+                                elif fmt == "fmp4":
+                                    input_args = ["-f", "mov", "-i", "pipe:0"]
+
                             ffmpeg_process = FFmpegProcess(
                                 args=[
                                     "-hide_banner",
                                     "-nostdin", "-y",
-                                    "-i", "pipe:0",
+                                    *input_args, # may get different input type
                                     "-vn",
                                     "-ac", "1", # mono
                                     "-ar", f"{sample_rate}",
