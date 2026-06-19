@@ -286,21 +286,18 @@ class Crabber:
                         await self.danmaku.connect()
                     except Exception as e:
                         self.logger.exception(f"danmaku error: {e}")
-                        # TODO: remove the hack to set the __status
-                        self.danmaku._LiveDanmaku__status = self.danmaku.STATUS_ERROR # type: ignore
 
                 elif danmaku_status in [
                         self.danmaku.STATUS_CONNECTING,  # 1
                         self.danmaku.STATUS_ESTABLISHED, # 2
                         self.danmaku.STATUS_CLOSING,     # 3
                     ]:
-                        # if danmaku is in these states, it should not be here, reset the status
-                        # TODO: remove the hack to set the __status
+                        # if danmaku is in these states, it should not be here, reset the status just in case
+                        self.logger.warning(f"reset danmaku status: {self.danmaku.get_status()} -> STATUS_ERROR")
                         self.danmaku._LiveDanmaku__status = self.danmaku.STATUS_CLOSED # type: ignore
 
                 else:
-                    self.logger.warning(f"unknown danmaku status: {self.danmaku.get_status()}")
-                    # TODO: remove the hack to set the __status
+                    self.logger.warning(f"unknown danmaku status: {self.danmaku.get_status()}, reset to STATUS_ERROR")
                     self.danmaku._LiveDanmaku__status = self.danmaku.STATUS_ERROR # type: ignore
 
             await asyncio.sleep(1)

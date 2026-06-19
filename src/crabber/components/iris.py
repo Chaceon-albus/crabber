@@ -190,7 +190,6 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
                     real_begin = asr_offset + speech_begin
                     real_end = asr_offset + speech_end
 
-                    # TODO: use debug level
                     logger.debug(f"{real_begin} -> {real_end}: {content}")
 
                     speech = Speech(
@@ -516,9 +515,7 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
 
             prompt = prompt.strip()
 
-
-            # TODO: use debug level
-            logger.info(f"send llm prompt:\n{prompt}")
+            logger.debug(f"send llm prompt:\n{prompt}")
 
             if not llm_chat:
                 logger.warning("llm_chat is not initialized")
@@ -533,7 +530,6 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
                 resp = await llm_chat.send_message(prompt, system_prompt=additional_signal)
                 resp = resp.strip()
 
-                # TODO: use debug level
                 logger.info(f"received llm resp:\n{resp}")
 
                 if resp.upper() == "[SKIP]":
