@@ -189,7 +189,7 @@ class LiveStreamManager:
         async def handler(_) -> None:
 
             if self.dispatcher and not self.dispatcher.done():
-                ctx.logger.warning(f"live stream handler is already running, skipping...")
+                ctx.logger.debug("live stream handler is already running, skipping...")
                 return
 
             async def _dispatch_worker() -> None:

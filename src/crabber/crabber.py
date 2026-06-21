@@ -369,6 +369,7 @@ class Crabber:
             cmd = data.get("cmd", "")
 
             is_currently_online = self.room_info.is_online
+            stream_status = self.room_info.stream.status
 
             match cmd:
 
@@ -386,9 +387,11 @@ class Crabber:
 
                     if not is_currently_online: # offline -> online
                         await self._on_room_online()
-                    else:
+                    elif stream_status != StreamStatus.STREAMING:
                         self.room_info.stream.status = StreamStatus.STREAMING
                         await self._on_room_streaming()
+                    else:
+                        self.logger.debug("ignoring duplicate LIVE event while stream handler is already running")
 
                 case "PREPARING":
                     self.logger.debug(f"received PREPARING event with data: {data}")
