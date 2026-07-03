@@ -103,6 +103,7 @@ class LiveStreamManager:
         self.subscribers: list[asyncio.Queue] = []
         self.current_format: str | None = None
         self._full_subscriber_log_state: dict[int, tuple[float, int]] = {}
+        self._restart_requested: str | None = None
 
 
     async def get_live_streams(self) -> list[LiveStream]:
@@ -166,6 +167,29 @@ class LiveStreamManager:
         return streams
 
 
+    async def has_available_stream(self) -> bool:
+        stream = None
+        try:
+            for s in self._preferred_http_streams(await self.get_live_streams()):
+                stream = await s.download()
+                if stream is not None:
+                    return True
+        finally:
+            if stream is not None:
+                stream.release()
+
+        return False
+
+
+    @staticmethod
+    def _preferred_http_streams(streams: list[LiveStream]) -> list[LiveStream]:
+        # Filter out HLS streams and sort by format preference (flv > ts > fmp4)
+        format_pref = {"flv": 0, "ts": 1, "fmp4": 2}
+        http_streams = [s for s in streams if s.protocol_name == "http_stream"]
+        http_streams.sort(key=lambda s: format_pref.get(s.format_name, 99))
+        return http_streams
+
+
     def subscribe(self, q: asyncio.Queue | None = None) -> asyncio.Queue:
         q = asyncio.Queue(maxsize=128) if q is None else q # ~64KB * 128 = 8MB of buffer
         self.subscribers.append(q)
@@ -177,12 +201,7 @@ class LiveStreamManager:
             self.subscribers.remove(q)
         self._full_subscriber_log_state.pop(id(q), None)
 
-        try:
-            q.put_nowait(None)
-        except asyncio.QueueFull:
-            pass
-        except Exception as e:
-            self.ctx.logger.error(f"failed to notify subscriber: {e}")
+        self._signal_subscriber_end(q)
 
 
     def get_streaming_handler(self, retry_delay: float = 10.0) -> Callable[[RoomInfo], asyncio._CoroutineLike]:
@@ -213,6 +232,10 @@ class LiveStreamManager:
 
                         try:
 
+                            if self._restart_requested:
+                                ctx.logger.info(f"restarting live stream dispatcher: {self._restart_requested}")
+                                self._restart_requested = None
+
                             # force retry after delay
                             if datetime.now() - last_retry_time < timedelta(seconds=retry_delay):
                                 delay = retry_delay - (datetime.now() - last_retry_time).total_seconds()
@@ -226,12 +249,7 @@ class LiveStreamManager:
                             self.current_format = None
 
                             if (streams := await self.get_live_streams()):
-                                # Filter out HLS streams and sort by format preference (flv > ts > fmp4)
-                                format_pref = {"flv": 0, "ts": 1, "fmp4": 2}
-                                http_streams = [s for s in streams if s.protocol_name == "http_stream"]
-                                http_streams.sort(key=lambda s: format_pref.get(s.format_name, 99))
-
-                                for s in http_streams:
+                                for s in self._preferred_http_streams(streams):
                                     if (stream := await s.download()) is not None:
                                         self.current_format = s.format_name
                                         break
@@ -274,6 +292,8 @@ class LiveStreamManager:
         try:
             while True:
 
+                if self._restart_requested: break
+
                 if not (subs:= list(self.subscribers)): break
 
                 try:
@@ -289,19 +309,18 @@ class LiveStreamManager:
                         try:
                             q.put_nowait(chunk)
                         except asyncio.QueueFull:
-                            self._log_subscriber_queue_full(q, len(chunk))
+                            self._handle_subscriber_queue_full(q, len(chunk))
                         except Exception as e:
                             self.ctx.logger.error(f"failed to dispatch chunk to subscriber: {e}")
+
+                    if self._restart_requested: break
 
         finally:
 
             stream.release()
 
             for q in list(self.subscribers):
-                try:
-                    q.put_nowait(None) # signal end of stream
-                except Exception as _:
-                    pass
+                self._signal_subscriber_end(q)
 
 
     def stop(self):
@@ -309,6 +328,22 @@ class LiveStreamManager:
         self.status = StreamStatus.OFFLINE
         if self.dispatcher:
             self.dispatcher.cancel()
+
+
+    def request_restart(self, reason: str) -> None:
+        if self.status == StreamStatus.OFFLINE:
+            return
+        if not self._restart_requested:
+            self._restart_requested = reason
+
+
+    def _handle_subscriber_queue_full(self, q: asyncio.Queue, chunk_size: int) -> None:
+        self._log_subscriber_queue_full(q, chunk_size)
+        dropped = self._reset_subscriber_queue(q)
+        self.request_restart("subscriber queue is full")
+        self.ctx.logger.debug(
+            f"reset {self._format_subscriber_queue(q)} after dropping {dropped} queued chunk(s)"
+        )
 
 
     def _log_subscriber_queue_full(self, q: asyncio.Queue, chunk_size: int) -> None:
@@ -339,16 +374,39 @@ class LiveStreamManager:
     @staticmethod
     def _format_subscriber_queue(q: asyncio.Queue) -> str:
         maxsize = getattr(q, "maxsize", getattr(q, "_maxsize", "unknown"))
-        unfinished = getattr(q, "_unfinished_tasks", None)
         parts = [
             f"type={type(q).__name__}",
             f"id=0x{id(q):x}",
             f"size={q.qsize()}",
             f"maxsize={maxsize}",
         ]
-        if unfinished is not None:
-            parts.append(f"unfinished_tasks={unfinished}")
         return f"subscriber queue ({', '.join(parts)})"
+
+
+    @staticmethod
+    def _reset_subscriber_queue(q: asyncio.Queue) -> int:
+        dropped = 0
+        while True:
+            try:
+                q.get_nowait()
+                dropped += 1
+            except asyncio.QueueEmpty:
+                break
+
+        try:
+            q.put_nowait(None)
+        except asyncio.QueueFull:
+            pass
+        return dropped
+
+
+    def _signal_subscriber_end(self, q: asyncio.Queue) -> None:
+        try:
+            q.put_nowait(None)
+        except asyncio.QueueFull:
+            self._reset_subscriber_queue(q)
+        except Exception as e:
+            self.ctx.logger.error(f"failed to notify subscriber: {e}")
 
 
     async def close(self) -> None:

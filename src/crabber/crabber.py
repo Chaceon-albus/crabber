@@ -257,10 +257,8 @@ class Crabber:
                 self.room_info.start_time = datetime.fromtimestamp(
                     room_info.get("live_start_time", int(datetime.now().timestamp()))
                 )
-                # if the room is already online, we assume it's streaming,
-                # since this function is called when the crabber is started or reconnected
-                if self.room_info.stream: # make linter happy
-                    self.room_info.stream.status = StreamStatus.STREAMING
+                if self.room_info.stream and self.room_info.stream.status == StreamStatus.OFFLINE:
+                    self.room_info.stream.status = StreamStatus.ONLINE
         except Exception as e:
             self.logger.exception(f"failed to write room info: {e}")
         else:
@@ -383,9 +381,9 @@ class Crabber:
                         self.room_info.start_time = datetime.fromtimestamp(data["live_time"])
 
                     self.room_info.is_online = True
-                    self.room_info.stream.status = StreamStatus.ONLINE
 
                     if not is_currently_online: # offline -> online
+                        self.room_info.stream.status = StreamStatus.ONLINE
                         await self._on_room_online()
                     elif stream_status != StreamStatus.STREAMING:
                         self.room_info.stream.status = StreamStatus.STREAMING
@@ -453,12 +451,48 @@ class Crabber:
         return self.__init_time
 
 
+    async def _probe_live_stream_available(self) -> bool:
+        stream = self.room_info.stream
+        if stream is None:
+            return False
+
+        try:
+            return await stream.has_available_stream()
+        except Exception as e:
+            self.logger.warning(f"failed to probe live stream availability: {e}")
+            return False
+
+
     async def _check_live_status(self) -> None:
-        is_currently_online = self.room_info.is_online
+        was_online = self.room_info.is_online
         await self._update_room_info()
 
+        if not was_online and self.room_info.is_online:
+            self.logger.info("detected room online during status check")
+            if self.room_info.stream:
+                self.room_info.stream.status = StreamStatus.ONLINE
+            await self._on_room_online()
+
+            if await self._probe_live_stream_available():
+                self.logger.info("detected live stream availability during status check")
+                if self.room_info.stream:
+                    self.room_info.stream.status = StreamStatus.STREAMING
+                await self._on_room_streaming()
+            return
+
+        if (
+            self.room_info.is_online
+            and self.room_info.stream is not None
+            and self.room_info.stream.status != StreamStatus.STREAMING
+            and await self._probe_live_stream_available()
+        ):
+            self.logger.info("detected live stream availability during status check")
+            self.room_info.stream.status = StreamStatus.STREAMING
+            await self._on_room_streaming()
+            return
+
         # check transition from online to offline (missed PREPARING)
-        if is_currently_online and not self.room_info.is_online:
+        if was_online and not self.room_info.is_online:
             self.logger.info("detected room offline during status check")
             self.room_info.end_time = datetime.now()
             if self.room_info.stream:

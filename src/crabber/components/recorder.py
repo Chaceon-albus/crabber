@@ -17,6 +17,7 @@ from crabber.ffmpeg import FFmpegProcess
 
 
 default_events = []
+WRITE_TIMEOUT = 30.0
 
 
 def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) -> Callable[[dict], Awaitable[None]]:
@@ -34,10 +35,11 @@ def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) ->
         # Create the queue inside the coroutine so it's bound to the running event loop
         queue = asyncio.Queue(maxsize=128)
         ctx.room_info.stream.subscribe(queue)  # type: ignore
+        output_path: Path | None = None
+        awaiting_fresh_stream = False
 
         if ffmpeg_path:=shutil.which("ffmpeg"):
             # use ffmpeg to write .mp4 file
-            fn: Path | str | None = None
             ffmpeg: FFmpegProcess | None = None
 
             while True:
@@ -45,64 +47,65 @@ def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) ->
                     data: bytes | None = await queue.get()
 
                     if data is None:
+                        awaiting_fresh_stream = False
                         if ffmpeg is not None:
-                            logger.info(f"stop recording: {fn}")
-                            await ffmpeg.close()
+                            logger.info(f"stop recording: {output_path}")
+                            await _close_ffmpeg(ffmpeg, logger)
                             ffmpeg = None
-                    else:
-                        if ffmpeg is None or not ffmpeg.is_running:
-                            if ffmpeg is not None:
-                                await ffmpeg.close()
-                            # get dest filename
-                            tmpl = Template(template)
-                            fn = tmpl.safe_substitute({
-                                "date": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-                                "room_id": ctx.room_info.id,
-                                "title": ctx.room_info.title,
-                            })
-                            fn = output_dir.joinpath(safe_filename(fn))
-                            fn = _ensure_ext(fn, ".mp4")
+                        continue
 
-                            input_args = ["-i", "pipe:0"]
+                    if awaiting_fresh_stream:
+                        continue
 
-                            if ctx.room_info.stream is not None and ctx.room_info.stream.current_format:
-                                fmt = ctx.room_info.stream.current_format
-                                if fmt == "flv":
-                                    input_args = ["-f", "flv", "-i", "pipe:0"]
-                                elif fmt == "ts":
-                                    input_args = ["-f", "mpegts", "-i", "pipe:0"]
-                                elif fmt == "fmp4":
-                                    input_args = ["-f", "mov", "-i", "pipe:0"]
+                    if ffmpeg is None or not ffmpeg.is_running:
+                        if ffmpeg is not None:
+                            await _close_ffmpeg(ffmpeg, logger)
+                        # get dest filename
+                        output_path = _build_output_path(output_dir, template, ctx, ".mp4")
 
-                            ffmpeg = FFmpegProcess(
-                                args=[
-                                    "-hide_banner",
-                                    "-nostdin", "-y",
-                                    *input_args, # may get different input type
-                                    "-c", "copy",
-                                    "-movflags", "empty_moov+default_base_moof+frag_keyframe",
-                                    str(fn.resolve()),
-                                ],
-                                ffmpeg_path=ffmpeg_path,
-                                logger=logger,
-                            )
-                            await ffmpeg.start()
-                            logger.info(f"start recording: {fn}")
+                        input_args = ["-i", "pipe:0"]
 
-                        await ffmpeg.write(data)
+                        if ctx.room_info.stream is not None and ctx.room_info.stream.current_format:
+                            fmt = ctx.room_info.stream.current_format
+                            if fmt == "flv":
+                                input_args = ["-f", "flv", "-i", "pipe:0"]
+                            elif fmt == "ts":
+                                input_args = ["-f", "mpegts", "-i", "pipe:0"]
+                            elif fmt == "fmp4":
+                                input_args = ["-f", "mov", "-i", "pipe:0"]
+
+                        ffmpeg = FFmpegProcess(
+                            args=[
+                                "-hide_banner",
+                                "-nostdin", "-y",
+                                *input_args, # may get different input type
+                                "-c", "copy",
+                                "-movflags", "empty_moov+default_base_moof+frag_keyframe",
+                                str(output_path.resolve()),
+                            ],
+                            ffmpeg_path=ffmpeg_path,
+                            logger=logger,
+                        )
+                        await ffmpeg.start()
+                        logger.info(f"start recording: {output_path}")
+
+                    await asyncio.wait_for(ffmpeg.write(data), timeout=WRITE_TIMEOUT)
 
                 except asyncio.CancelledError:
                     logger.info("recorder task cancelled")
                     if ffmpeg is not None:
-                        await ffmpeg.close()
+                        await _close_ffmpeg(ffmpeg, logger)
                         ffmpeg = None
                     return
 
                 except Exception as e:
-                    logger.error(f"recorder error: {e}")
+                    logger.exception(f"recorder error, waiting for a fresh stream before resuming: {e}")
                     if ffmpeg is not None:
-                        await ffmpeg.close()
+                        await _close_ffmpeg(ffmpeg, logger)
                         ffmpeg = None
+                    await _cleanup_empty_file(output_path, logger)
+                    _request_fresh_stream(ctx, f"recorder write failed: {type(e).__name__}")
+                    awaiting_fresh_stream = True
 
         else:
             # directly write to .flv file
@@ -112,39 +115,85 @@ def get_handler(ctx: Crabber, path: str, template: str = "", *args, **kwargs) ->
                     data: bytes | None = await queue.get()
 
                     if data is None: # end of stream
+                        awaiting_fresh_stream = False
                         if fp is not None and not fp.closed:
                             logger.info(f"stop recording: {fp.name}")
-                            await fp.close()
+                            await _close_file(fp, logger)
                             fp = None
                         continue
-                    else:
-                        if fp is None or fp.closed:
-                            tmpl = Template(template)
-                            fn = tmpl.safe_substitute({
-                                "date": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-                                "room_id": ctx.room_info.id,
-                                "title": ctx.room_info.title,
-                            })
-                            fn = output_dir.joinpath(safe_filename(fn))
-                            fp = await aiofiles.open(_ensure_ext(fn, ".flv"), mode="wb")
-                            logger.info(f"start recording: {fp.name}")
 
-                    await fp.write(data)
+                    if awaiting_fresh_stream:
+                        continue
+
+                    if fp is None or fp.closed:
+                        output_path = _build_output_path(output_dir, template, ctx, ".flv")
+                        fp = await aiofiles.open(output_path, mode="wb")
+                        logger.info(f"start recording: {fp.name}")
+
+                    await asyncio.wait_for(fp.write(data), timeout=WRITE_TIMEOUT)
 
                 except asyncio.CancelledError:
                     logger.info("recorder task cancelled")
-                    if fp is not None: await fp.close()
+                    if fp is not None:
+                        await _close_file(fp, logger)
                     return
                 except Exception as e:
-                    logger.error(f"recorder error: {e}")
-                    if fp is not None: await fp.close()
-                    fp = None
+                    logger.exception(f"recorder error, waiting for a fresh stream before resuming: {e}")
+                    if fp is not None:
+                        await _close_file(fp, logger)
+                        fp = None
+                    await _cleanup_empty_file(output_path, logger)
+                    _request_fresh_stream(ctx, f"recorder write failed: {type(e).__name__}")
+                    awaiting_fresh_stream = True
 
 
     ctx.add_task(_recorder())
 
 
     return empty_handler
+
+
+def _build_output_path(output_dir: Path, template: str, ctx: Crabber, ext: str) -> Path:
+    tmpl = Template(template)
+    generated_name = tmpl.safe_substitute({
+        "date": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+        "room_id": ctx.room_info.id,
+        "title": ctx.room_info.title,
+    })
+    return _ensure_ext(output_dir.joinpath(safe_filename(generated_name)), ext)
+
+
+async def _close_ffmpeg(ffmpeg: FFmpegProcess, logger) -> None:
+    try:
+        await ffmpeg.close()
+    except Exception as e:
+        logger.warning(f"failed to close ffmpeg after recorder error: {e}")
+
+
+async def _close_file(fp: AsyncBufferedIOBase, logger) -> None:
+    try:
+        await fp.close()
+    except Exception as e:
+        logger.warning(f"failed to close recording file after recorder error: {e}")
+
+
+async def _cleanup_empty_file(fn: Path | str | None, logger) -> None:
+    if fn is None:
+        return
+
+    path = Path(fn)
+    try:
+        if path.exists() and path.is_file() and path.stat().st_size == 0:
+            path.unlink()
+            logger.info(f"removed empty recording file after recorder error: {path}")
+    except Exception as e:
+        logger.warning(f"failed to remove empty recording file {path}: {e}")
+
+
+def _request_fresh_stream(ctx: Crabber, reason: str) -> None:
+    stream = ctx.room_info.stream
+    if stream is not None:
+        stream.request_restart(reason)
 
 
 def _ensure_ext(fn: Path, ext: str) -> Path:
