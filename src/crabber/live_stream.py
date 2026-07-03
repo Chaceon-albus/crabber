@@ -5,6 +5,7 @@ import asyncio
 
 from datetime import datetime, timedelta
 from enum import Enum
+from time import monotonic
 from typing import Callable, TYPE_CHECKING
 from bilibili_api.live import ScreenResolution
 
@@ -101,6 +102,7 @@ class LiveStreamManager:
         self.dispatcher: asyncio.Task | None = None
         self.subscribers: list[asyncio.Queue] = []
         self.current_format: str | None = None
+        self._full_subscriber_log_state: dict[int, tuple[float, int]] = {}
 
 
     async def get_live_streams(self) -> list[LiveStream]:
@@ -173,6 +175,7 @@ class LiveStreamManager:
     def unsubscribe(self, q: asyncio.Queue) -> None:
         if q in self.subscribers:
             self.subscribers.remove(q)
+        self._full_subscriber_log_state.pop(id(q), None)
 
         try:
             q.put_nowait(None)
@@ -286,7 +289,7 @@ class LiveStreamManager:
                         try:
                             q.put_nowait(chunk)
                         except asyncio.QueueFull:
-                            self.ctx.logger.warning(f"subscriber {q!r} is full, dropping chunk")
+                            self._log_subscriber_queue_full(q, len(chunk))
                         except Exception as e:
                             self.ctx.logger.error(f"failed to dispatch chunk to subscriber: {e}")
 
@@ -306,6 +309,46 @@ class LiveStreamManager:
         self.status = StreamStatus.OFFLINE
         if self.dispatcher:
             self.dispatcher.cancel()
+
+
+    def _log_subscriber_queue_full(self, q: asyncio.Queue, chunk_size: int) -> None:
+        qid = id(q)
+        now = monotonic()
+        interval = 10.0
+        state = self._full_subscriber_log_state.get(qid)
+
+        if state is None:
+            self._full_subscriber_log_state[qid] = (now, 0)
+            self.ctx.logger.warning(
+                f"{self._format_subscriber_queue(q)} is full, dropping chunk ({chunk_size} bytes)"
+            )
+            return
+
+        last_log, suppressed = state
+        if now - last_log < interval:
+            self._full_subscriber_log_state[qid] = (last_log, suppressed + 1)
+            return
+
+        self._full_subscriber_log_state[qid] = (now, 0)
+        suffix = f", suppressed {suppressed} similar drop(s)" if suppressed else ""
+        self.ctx.logger.warning(
+            f"{self._format_subscriber_queue(q)} is full, dropping chunk ({chunk_size} bytes{suffix})"
+        )
+
+
+    @staticmethod
+    def _format_subscriber_queue(q: asyncio.Queue) -> str:
+        maxsize = getattr(q, "maxsize", getattr(q, "_maxsize", "unknown"))
+        unfinished = getattr(q, "_unfinished_tasks", None)
+        parts = [
+            f"type={type(q).__name__}",
+            f"id=0x{id(q):x}",
+            f"size={q.qsize()}",
+            f"maxsize={maxsize}",
+        ]
+        if unfinished is not None:
+            parts.append(f"unfinished_tasks={unfinished}")
+        return f"subscriber queue ({', '.join(parts)})"
 
 
     async def close(self) -> None:
