@@ -3,7 +3,7 @@ import json
 import time
 
 from collections import UserString
-from datetime import datetime
+from datetime import datetime, timedelta
 from string import Template
 from typing import Callable, Awaitable
 
@@ -35,6 +35,7 @@ def get_handler(
     on_cron = on_cron or []
 
     welcome_msg = MessageSelector(on_live.get("message", ""), on_live.get("random", False))
+    welcome_misfire_grace_time = float(on_live.get("misfire_grace_time", 60.0))
 
     crontab_msg = [
         {
@@ -86,11 +87,29 @@ def get_handler(
             logger.error(f"failed to send danmaku: {e}")
 
 
-    async def chatter_online(info: RoomInfo) -> None:
+    def _should_send_welcome(info: RoomInfo) -> bool:
 
         # if online in 10s after init, it might not be online before start
         elapsed = time.monotonic() - _init_time
-        if elapsed > 10: await _send_danmaku_noexcept(welcome_msg, info)
+        if elapsed <= 10:
+            logger.debug("skip welcome message during startup grace period")
+            return False
+
+        live_duration = datetime.now() - info.start_time
+        if live_duration > timedelta(seconds=welcome_misfire_grace_time):
+            logger.info(
+                f"room {info.id} has been online for more than "
+                f"{welcome_misfire_grace_time} seconds, skip welcome message"
+            )
+            return False
+
+        return True
+
+
+    async def chatter_online(info: RoomInfo) -> None:
+
+        if _should_send_welcome(info):
+            await _send_danmaku_noexcept(welcome_msg, info)
 
         if not ctx.scheduler:
             logger.error("scheduler not initialized, skip")

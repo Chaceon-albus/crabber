@@ -243,15 +243,23 @@ class Crabber:
                     self.logger.error(f"[{attempt}/{max_attempt}] failed to update room info: {e!r}")
                     await asyncio.sleep(3*attempt) # 3s, 6s, 9s
 
+            if not room_info:
+                self.logger.warning("failed to update room info after retries, keep previous state")
+                return
+
             anchor_info = room_info.get("anchor_info", {})
             room_info   = room_info.get("room_info", {})
+
+            if not room_info:
+                self.logger.warning("room info response missing room_info, keep previous state")
+                return
 
             self.uid = room_info.get("uid", self.uid)
             self.room_info.area = room_info.get("area_name", self.room_info.area)
             self.room_info.uname = anchor_info.get("base_info", {}).get("uname", self.room_info.uname)
             self.room_info.title = room_info.get("title", self.room_info.title)
             self.room_info.cover = room_info.get("cover", self.room_info.cover)
-            self.room_info.is_online = (room_info.get("live_status", 0) == 1)
+            self.room_info.is_online = (room_info.get("live_status", self.room_info.is_online) == 1)
 
             if self.room_info.is_online:
                 self.room_info.start_time = datetime.fromtimestamp(
