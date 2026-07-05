@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -22,6 +24,7 @@ class RoomInfo:
     end_time: datetime = datetime.now()
 
     stream: LiveStreamManager | None = None
+    status_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
 
 
 if __name__ == "__main__":

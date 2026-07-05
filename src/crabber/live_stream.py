@@ -97,6 +97,7 @@ class LiveStreamManager:
         streaming_handler = self.get_streaming_handler()
         self.ctx.add_streaming_callback(streaming_handler)
 
+        # start OFFLINE until room status events or polling promote the stream lifecycle.
         self.status = StreamStatus.OFFLINE
         self.client: aiohttp.ClientSession | None = None
         self.dispatcher: asyncio.Task | None = None
@@ -174,6 +175,8 @@ class LiveStreamManager:
                 stream = await s.download()
                 if stream is not None:
                     return True
+        except Exception as e:
+            self.ctx.logger.warning(f"failed to probe live stream availability: {e}")
         finally:
             if stream is not None:
                 stream.release()
@@ -183,7 +186,7 @@ class LiveStreamManager:
 
     @staticmethod
     def _preferred_http_streams(streams: list[LiveStream]) -> list[LiveStream]:
-        # Filter out HLS streams and sort by format preference (flv > ts > fmp4)
+        # filter out HLS streams and sort by format preference (flv > ts > fmp4)
         format_pref = {"flv": 0, "ts": 1, "fmp4": 2}
         http_streams = [s for s in streams if s.protocol_name == "http_stream"]
         http_streams.sort(key=lambda s: format_pref.get(s.format_name, 99))
@@ -221,6 +224,7 @@ class LiveStreamManager:
                 failure_flag = False
 
                 try:
+                    # streaming callbacks create this dispatcher; OFFLINE stops retries and dispatch.
                     while self.status != StreamStatus.OFFLINE:
 
                         if not self.subscribers:
@@ -292,6 +296,8 @@ class LiveStreamManager:
         try:
             while True:
 
+                # offline status wins over a readable response so subscribers are ended promptly.
+                if self.status == StreamStatus.OFFLINE: break
                 if self._restart_requested: break
 
                 if not (subs:= list(self.subscribers)): break
@@ -319,12 +325,14 @@ class LiveStreamManager:
 
             stream.release()
 
+            # end-of-stream sentinel lets recorder/iris close files and encoders cleanly.
             for q in list(self.subscribers):
                 self._signal_subscriber_end(q)
 
 
     def stop(self):
         # rarely used, just in case
+        # manual shutdown uses the same OFFLINE state that room offline transitions use.
         self.status = StreamStatus.OFFLINE
         if self.dispatcher:
             self.dispatcher.cancel()

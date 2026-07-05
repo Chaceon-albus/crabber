@@ -61,6 +61,7 @@ class Crabber:
         self.streaming_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
         self.room_change_callbacks: list[Callable[[RoomInfo], asyncio._CoroutineLike]] = []
 
+        self._is_started = False
         self._is_cleaned_up = False
         self._services_config = services or []
         self.services: dict[str, BaseService] = {} # key: type -> value: Service class
@@ -217,7 +218,8 @@ class Crabber:
 
         self.room_info.stream = LiveStreamManager(ctx=self)
 
-        await self._update_room_info() # update room_info once before self.start()
+        # bootstrap only syncs room fields and base stream status; components register before callbacks dispatch.
+        await self.check_live_status(dispatch_callbacks=False) # update room_info once before self.start()
 
         self.add_task(self._listen_refresh_events())  # listen for credential refresh events in the background
         self.add_task(self._keep_danmaku_connected()) # run danmaku connection in the background
@@ -225,55 +227,6 @@ class Crabber:
         live_status_handler = self._get_live_status_handler()
         for event_name in ["LIVE", "PREPARING", "ROOM_CHANGE", "CHANGE_ROOM_INFO"]:
             self.add_handler(event_name, live_status_handler)
-
-
-    async def _update_room_info(self) -> None: # no exception will be raised
-
-        attempt = 0
-        max_attempt = 3
-        room_info = {}
-
-        try:
-
-            while attempt < max_attempt and not room_info:
-                attempt += 1
-                try:
-                    room_info = await self.room.get_room_info() # type: ignore
-                except Exception as e:
-                    self.logger.error(f"[{attempt}/{max_attempt}] failed to update room info: {e!r}")
-                    await asyncio.sleep(3*attempt) # 3s, 6s, 9s
-
-            if not room_info:
-                self.logger.warning("failed to update room info after retries, keep previous state")
-                return
-
-            anchor_info = room_info.get("anchor_info", {})
-            room_info   = room_info.get("room_info", {})
-
-            if not room_info:
-                self.logger.warning("room info response missing room_info, keep previous state")
-                return
-
-            self.uid = room_info.get("uid", self.uid)
-            self.room_info.area = room_info.get("area_name", self.room_info.area)
-            self.room_info.uname = anchor_info.get("base_info", {}).get("uname", self.room_info.uname)
-            self.room_info.title = room_info.get("title", self.room_info.title)
-            self.room_info.cover = room_info.get("cover", self.room_info.cover)
-            self.room_info.is_online = (room_info.get("live_status", self.room_info.is_online) == 1)
-
-            if self.room_info.is_online:
-                self.room_info.start_time = datetime.fromtimestamp(
-                    room_info.get("live_start_time", int(datetime.now().timestamp()))
-                )
-                if self.room_info.stream and self.room_info.stream.status == StreamStatus.OFFLINE:
-                    self.room_info.stream.status = StreamStatus.ONLINE
-        except Exception as e:
-            self.logger.exception(f"failed to write room info: {e}")
-        else:
-            self.logger.debug(f"update room info: {self.room_info}")
-        finally:
-            if self.uid < 0:
-                logger.warning("failed to update uid via get_room_info()")
 
 
     async def _keep_danmaku_connected(self) -> None:
@@ -285,8 +238,8 @@ class Crabber:
                     self.danmaku.STATUS_ERROR   # 5
                 ]:
 
-                    # in case the room status changes while danmaku is not connected
-                    await self._update_room_info() # no exception
+                    # reconnect checks keep status fresh; before start(), callbacks stay suppressed.
+                    await self.check_live_status(dispatch_callbacks=self._is_started) # no exception
 
                     try:
                         await self.danmaku.connect()
@@ -374,42 +327,57 @@ class Crabber:
             data = event.get("data", {})
             cmd = data.get("cmd", "")
 
-            is_currently_online = self.room_info.is_online
-            stream_status = self.room_info.stream.status
 
             match cmd:
 
                 case "LIVE":
                     self.logger.debug(f"received LIVE event with data: {data}")
 
-                    if "live_time" in data:
-                        # multiple events may be received during the live status transition,
-                        # but only the first one contains the live_time field,
-                        # so it's safe to update start_time whenever it's present
-                        self.room_info.start_time = datetime.fromtimestamp(data["live_time"])
+                    async with self.room_info.status_lock:
+                        if "live_time" in data:
+                            # multiple events may be received during the live status transition,
+                            # but only the first one contains the live_time field,
+                            # so it's safe to update start_time whenever it's present
+                            self.room_info.start_time = datetime.fromtimestamp(data["live_time"])
 
-                    self.room_info.is_online = True
+                        is_currently_online = self.room_info.is_online
+                        stream_status = self.room_info.stream.status
+                        self.room_info.is_online = True
 
-                    if not is_currently_online: # offline -> online
-                        self.room_info.stream.status = StreamStatus.ONLINE
-                        await self._on_room_online()
-                    elif stream_status != StreamStatus.STREAMING:
-                        self.room_info.stream.status = StreamStatus.STREAMING
-                        await self._on_room_streaming()
-                    else:
-                        self.logger.debug("ignoring duplicate LIVE event while stream handler is already running")
+                        if not self._is_started:
+                            # live events can arrive before components are registered; persist state only.
+                            self.room_info.stream.status = StreamStatus.ONLINE
+                            return
+
+                        if not is_currently_online: # offline -> online
+                            # the first LIVE event confirms the room is online, but the stream may not be readable yet.
+                            # let a later LIVE event or the periodic probe promote the stream to STREAMING.
+                            self.room_info.stream.status = StreamStatus.ONLINE
+                            # online callbacks see ONLINE state; STREAMING waits for a later event or probe.
+                            await self._on_room_online()
+                        elif stream_status != StreamStatus.STREAMING:
+                            # the room was already online, so this LIVE event is treated as stream availability.
+                            self.room_info.stream.status = StreamStatus.STREAMING
+                            # streaming callbacks start stream consumers such as recorder and iris.
+                            await self._on_room_streaming()
+                        else:
+                            self.logger.debug("ignoring duplicate LIVE event while stream handler is already running")
 
                 case "PREPARING":
                     self.logger.debug(f"received PREPARING event with data: {data}")
 
-                    self.room_info.end_time = datetime.fromtimestamp(
-                        safe_ts(data.get("send_time", 1000*datetime.now().timestamp()))
-                    )
-                    self.room_info.is_online = False
-                    self.room_info.stream.status = StreamStatus.OFFLINE
+                    async with self.room_info.status_lock:
+                        is_currently_online = self.room_info.is_online
+                        self.room_info.end_time = datetime.fromtimestamp(
+                            safe_ts(data.get("send_time", 1000*datetime.now().timestamp()))
+                        )
+                        self.room_info.is_online = False
+                        # set OFFLINE before callbacks so stream consumers observe the terminal state.
+                        self.room_info.stream.status = StreamStatus.OFFLINE
 
-                    if is_currently_online: # online -> offline
-                        await self._on_room_offline()
+                        if is_currently_online and self._is_started: # online -> offline
+                            # offline callbacks tear down lifecycle tasks such as chatter cron jobs.
+                            await self._on_room_offline()
 
                 case "ROOM_CHANGE":
                     data = data.get("data", {}) # extra layer for ROOM_CHANGE event
@@ -417,16 +385,19 @@ class Crabber:
                     self.room_info.area = data.get("area_name", self.room_info.area)
                     self.room_info.title = data.get("title", self.room_info.title)
 
-                    _ = await asyncio.gather(
-                        self._on_room_change(), # no exception
-                        self._update_room_info(), # no exception
-                    )
+                    # pre-start room changes update fields only; after start they also notify components.
+                    tasks = [self.check_live_status(dispatch_callbacks=self._is_started)] # no exception
+                    if self._is_started:
+                        tasks.append(self._on_room_change()) # no exception
+                    _ = await asyncio.gather(*tasks)
 
                 case "CHANGE_ROOM_INFO":
                     # relatively rare event, may be received when the streamer changes the cover
                     self.logger.info(f"received CHANGE_ROOM_INFO event with data: {data}")
                     self.room_info.cover = data.get("background") or self.room_info.cover
-                    await self._on_room_change()
+                    if self._is_started:
+                        # cover-only changes should not notify components before they are registered.
+                        await self._on_room_change()
 
                 case _:
                     self.logger.debug(f"received unhandled live status related event:\n{jsonify(event)}")
@@ -459,53 +430,106 @@ class Crabber:
         return self.__init_time
 
 
-    async def _probe_live_stream_available(self) -> bool:
-        stream = self.room_info.stream
-        if stream is None:
-            return False
+    async def check_live_status(self, *, dispatch_callbacks: bool = True) -> None:
 
-        try:
-            return await stream.has_available_stream()
-        except Exception as e:
-            self.logger.warning(f"failed to probe live stream availability: {e}")
-            return False
+        async def refresh_room_info_snapshot() -> None: # no exception will be raised
+            attempt = 0
+            max_attempt = 3
+            room_info = {}
 
+            try:
+                while attempt < max_attempt and not room_info:
+                    attempt += 1
+                    try:
+                        room_info = await self.room.get_room_info() # type: ignore
+                    except Exception as e:
+                        self.logger.error(f"[{attempt}/{max_attempt}] failed to update room info: {e!r}")
+                        await asyncio.sleep(3*attempt) # 3s, 6s, 9s
 
-    async def _check_live_status(self) -> None:
-        was_online = self.room_info.is_online
-        await self._update_room_info()
+                if not room_info:
+                    self.logger.warning("failed to update room info after retries, keep previous state")
+                    return
 
-        if not was_online and self.room_info.is_online:
-            self.logger.info("detected room online during status check")
-            if self.room_info.stream:
-                self.room_info.stream.status = StreamStatus.ONLINE
-            await self._on_room_online()
+                anchor_info = room_info.get("anchor_info", {})
+                room_info = room_info.get("room_info", {})
 
-            if await self._probe_live_stream_available():
-                self.logger.info("detected live stream availability during status check")
+                if not room_info:
+                    self.logger.warning("room info response missing room_info, keep previous state")
+                    return
+
+                self.uid = room_info.get("uid", self.uid)
+                self.room_info.area = room_info.get("area_name", self.room_info.area)
+                self.room_info.uname = anchor_info.get("base_info", {}).get("uname", self.room_info.uname)
+                self.room_info.title = room_info.get("title", self.room_info.title)
+                self.room_info.cover = room_info.get("cover", self.room_info.cover)
+                self.room_info.is_online = (room_info.get("live_status", self.room_info.is_online) == 1)
+
+                if self.room_info.is_online:
+                    self.room_info.start_time = datetime.fromtimestamp(
+                        room_info.get("live_start_time", int(datetime.now().timestamp()))
+                    )
+                    if self.room_info.stream and self.room_info.stream.status == StreamStatus.OFFLINE:
+                        # snapshot refresh can only prove the room is online, not that media is readable.
+                        self.room_info.stream.status = StreamStatus.ONLINE
+                elif self.room_info.stream:
+                    # snapshot refresh can prove the room is offline, so terminate stream state immediately.
+                    self.room_info.stream.status = StreamStatus.OFFLINE
+            except Exception as e:
+                self.logger.exception(f"failed to write room info: {e}")
+            else:
+                self.logger.debug(f"update room info: {self.room_info}")
+            finally:
+                if self.uid < 0:
+                    self.logger.warning("failed to update uid via get_room_info()")
+
+        async with self.room_info.status_lock:
+            was_online = self.room_info.is_online
+            await refresh_room_info_snapshot()
+
+            if not dispatch_callbacks:
+                # bootstrap/pre-start callers stop after status sync; callback replay happens from start().
+                return
+
+            # missed offline -> online transition: update callbacks first, then probe whether media is ready.
+            if not was_online and self.room_info.is_online:
+                self.logger.info("detected room online during status check")
                 if self.room_info.stream:
-                    self.room_info.stream.status = StreamStatus.STREAMING
+                    self.room_info.stream.status = StreamStatus.ONLINE
+                # dispatch online exactly once for this missed transition before probing media.
+                await self._on_room_online()
+
+                if self.room_info.stream and await self.room_info.stream.has_available_stream():
+                    self.logger.info("detected live stream availability during status check")
+                    if self.room_info.stream:
+                        self.room_info.stream.status = StreamStatus.STREAMING
+                    # the probe verified a readable stream, so start streaming consumers now.
+                    await self._on_room_streaming()
+
+                return
+
+            # room is already online, but no stream callback has run yet; probe the actual stream URL.
+            if (
+                self.room_info.is_online
+                and self.room_info.stream is not None
+                and self.room_info.stream.status != StreamStatus.STREAMING
+                and await self.room_info.stream.has_available_stream()
+            ):
+                self.logger.info("detected live stream availability during status check")
+                self.room_info.stream.status = StreamStatus.STREAMING
+                # this is the delayed ONLINE -> STREAMING promotion after startup or CDN lag.
                 await self._on_room_streaming()
-            return
 
-        if (
-            self.room_info.is_online
-            and self.room_info.stream is not None
-            and self.room_info.stream.status != StreamStatus.STREAMING
-            and await self._probe_live_stream_available()
-        ):
-            self.logger.info("detected live stream availability during status check")
-            self.room_info.stream.status = StreamStatus.STREAMING
-            await self._on_room_streaming()
-            return
+                return
 
-        # check transition from online to offline (missed PREPARING)
-        if was_online and not self.room_info.is_online:
-            self.logger.info("detected room offline during status check")
-            self.room_info.end_time = datetime.now()
-            if self.room_info.stream:
-                self.room_info.stream.status = StreamStatus.OFFLINE
-            await self._on_room_offline()
+            # check transition from online to offline (missed PREPARING)
+            if was_online and not self.room_info.is_online:
+                self.logger.info("detected room offline during status check")
+                self.room_info.end_time = datetime.now()
+                if self.room_info.stream:
+                    # keep OFFLINE explicit before dispatching the missed offline callback.
+                    self.room_info.stream.status = StreamStatus.OFFLINE
+                # dispatch offline exactly once for the missed transition.
+                await self._on_room_offline()
 
 
     async def _check_missed_preparing_on_startup(self) -> None:
@@ -531,20 +555,28 @@ class Crabber:
                         pass
                     finally:
                         self.logger.info("trigger offline callbacks...")
+                        # startup recovery backfills a missed offline callback for the previous run.
                         await self._on_room_offline()
         except Exception as e:
             self.logger.exception(f"failed to check missed offline on startup: {e}")
 
 
     def start(self) -> None:
-        if self.room_info.is_online and self.loop and self.loop.is_running():
-            self.logger.info("room is online before the program start")
-            asyncio.run_coroutine_threadsafe(self._on_room_online(), self.loop)
-            asyncio.run_coroutine_threadsafe(self._on_room_streaming(), self.loop) # assume that it's streaming
+        if self._is_started:
+            self.logger.warning("crabber is already started")
+            return
 
         if self.loop and self.loop.is_running():
+            self._is_started = True
+
+            # components are registered by now; replay online if bootstrap found the room live.
+            if self.room_info.is_online:
+                self.logger.info("room is online before the program start")
+                asyncio.run_coroutine_threadsafe(self._on_room_online(), self.loop)
+                # the immediate status check below will probe the stream and trigger streaming callbacks once available.
+
             self.add_job(
-                self._check_live_status,
+                self.check_live_status,
                 trigger="interval",
                 seconds=self.status_check_interval,
                 next_run_time=datetime.now(),
