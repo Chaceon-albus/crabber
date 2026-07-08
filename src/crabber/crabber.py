@@ -49,6 +49,7 @@ class Crabber:
         self._db_config = database or []
         self.db: Database | None = None
 
+        self._danmaku_handlers: list[tuple[str, Callable]] = []
         self.danmaku: biliapi.live.LiveDanmaku | None = None
 
         self.loop: asyncio.AbstractEventLoop | None = None
@@ -88,10 +89,13 @@ class Crabber:
         if self.loop is None or not self.loop.is_running():
             raise RuntimeError(f"crabber is not ready to add handler")
 
+        self._danmaku_handlers.append((event_name, handler))
+        target_danmaku = self.danmaku
+
         def _register():
-            if self.danmaku:
-                self.danmaku.add_event_listener(event_name, handler)
-            else:
+            if target_danmaku and target_danmaku is self.danmaku:
+                target_danmaku.add_event_listener(event_name, handler)
+            elif self.danmaku is None:
                 self.logger.error(f"failed to register handler: danmaku is not initialized")
 
         self.loop.call_soon_threadsafe(_register)
@@ -126,6 +130,24 @@ class Crabber:
 
         self.logger.debug(f"added task {scheduled_task.get_name()}")
         return scheduled_task
+
+
+    def _create_danmaku(self) -> LiveDanmaku:
+        danmaku = LiveDanmaku(
+            self.room_id,
+            credential=self.cred_manager.credential,
+            # Let Crabber own reconnect cadence; LiveDanmaku still tries each host once.
+            max_retry=1,
+            retry_after=0.5,
+        )
+
+        danmaku.logger = self.logger.getChild("Danmaku")
+        danmaku.logger.setLevel(logging.INFO)
+
+        for event_name, handler in self._danmaku_handlers:
+            danmaku.add_event_listener(event_name, handler)
+
+        return danmaku
 
 
     def get_service(self, service_type: type[TService]) -> TService | None:
@@ -211,10 +233,7 @@ class Crabber:
 
         biliapi.select_client("aiohttp") # httpx does not support websocket
 
-        self.danmaku = LiveDanmaku(self.room_id, credential=self.cred_manager.credential)
-
-        self.danmaku.logger = self.logger.getChild("Danmaku")
-        self.danmaku.logger.setLevel(logging.INFO)
+        self.danmaku = self._create_danmaku()
 
         self.room_info.stream = LiveStreamManager(ctx=self)
 
@@ -230,8 +249,75 @@ class Crabber:
 
 
     async def _keep_danmaku_connected(self) -> None:
-        while True:
-            if self.danmaku:
+        connect_task: asyncio.Task | None = None
+        connect_started_at: float | None = None
+        last_status_check = 0.0
+        retry_delay = 1.0
+        max_retry_delay = 10.0
+        connect_timeout = 45.0
+        status_check_interval = 60.0
+
+        async def close_connect_task() -> None:
+            nonlocal connect_task, connect_started_at
+
+            if connect_task and not connect_task.done():
+                connect_task.cancel()
+                try:
+                    await connect_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    self.logger.debug(f"danmaku connect task ended during cancellation: {e}")
+
+            connect_task = None
+            connect_started_at = None
+
+        async def reset_danmaku(reason: str) -> None:
+            await close_connect_task()
+            self.logger.warning(f"recreate danmaku: {reason}")
+            self.danmaku = self._create_danmaku()
+
+        try:
+            while True:
+                # check danmaku status every second
+                await asyncio.sleep(1)
+
+                if not self.danmaku: continue
+
+                loop_time = asyncio.get_running_loop().time()
+
+                if connect_task:
+                    if self.danmaku.get_status() == self.danmaku.STATUS_ESTABLISHED:
+                        retry_delay = 1.0
+
+                    if connect_task.done():
+                        try:
+                            await connect_task
+                        except asyncio.CancelledError:
+                            self.logger.warning("danmaku connect task cancelled")
+                        except Exception as e:
+                            self.logger.exception(f"danmaku error: {e}")
+                        finally:
+                            connect_task = None
+                            connect_started_at = None
+
+                        await reset_danmaku("connect task finished")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 1.5, max_retry_delay)
+                        continue
+
+                    if (
+                        connect_started_at is not None
+                        and self.danmaku.get_status() == self.danmaku.STATUS_CONNECTING
+                        and loop_time - connect_started_at > connect_timeout
+                    ):
+                        await reset_danmaku(f"connecting timeout after {connect_timeout:.0f}s")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 1.5, max_retry_delay)
+                        continue
+
+                    continue
+
                 if (danmaku_status:=self.danmaku.get_status()) in [
                     self.danmaku.STATUS_INIT,   # 0
                     self.danmaku.STATUS_CLOSED, # 4
@@ -239,27 +325,27 @@ class Crabber:
                 ]:
 
                     # reconnect checks keep status fresh; before start(), callbacks stay suppressed.
-                    await self.check_live_status(dispatch_callbacks=self._is_started) # no exception
+                    if loop_time - last_status_check >= status_check_interval:
+                        last_status_check = loop_time
+                        await self.check_live_status(dispatch_callbacks=self._is_started) # no exception
 
-                    try:
-                        await self.danmaku.connect()
-                    except Exception as e:
-                        self.logger.exception(f"danmaku error: {e}")
+                    connect_started_at = loop_time
+                    connect_task = asyncio.create_task(self.danmaku.connect())
 
                 elif danmaku_status in [
                         self.danmaku.STATUS_CONNECTING,  # 1
-                        self.danmaku.STATUS_ESTABLISHED, # 2
                         self.danmaku.STATUS_CLOSING,     # 3
                     ]:
-                        # if danmaku is in these states, it should not be here, reset the status just in case
-                        self.logger.warning(f"reset danmaku status: {self.danmaku.get_status()} -> STATUS_ERROR")
-                        self.danmaku._LiveDanmaku__status = self.danmaku.STATUS_CLOSED # type: ignore
+                        await reset_danmaku(f"stale danmaku status: {danmaku_status}")
+
+                elif danmaku_status == self.danmaku.STATUS_ESTABLISHED:
+                    continue
 
                 else:
-                    self.logger.warning(f"unknown danmaku status: {self.danmaku.get_status()}, reset to STATUS_ERROR")
-                    self.danmaku._LiveDanmaku__status = self.danmaku.STATUS_ERROR # type: ignore
+                    await reset_danmaku(f"unknown danmaku status: {danmaku_status}")
 
-            await asyncio.sleep(1)
+        finally:
+            await close_connect_task()
 
 
     async def _listen_refresh_events(self) -> None:
