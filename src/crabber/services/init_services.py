@@ -26,7 +26,10 @@ async def init_services(config: list, logger: logging.Logger = default_logger) -
             service_type = SERVICE_TYPES.get(stype)
 
             if service_type:
-                services[stype] = service_type(sc.get("config", {}), logger)
+                try:
+                    services[stype] = service_type(sc.get("config", {}), logger)
+                except Exception as e:
+                    logger.error(f"failed to initialize service {stype}: {e}")
             else:
                 logger.warning(f"unknown service type {stype}")
         else:

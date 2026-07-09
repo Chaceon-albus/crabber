@@ -1,4 +1,5 @@
 import argparse
+import importlib
 import json
 
 from crabber.logging import logger, set_level, choices, configure_logging
@@ -48,11 +49,15 @@ def main() -> None:
 
         for component in c.get("components", []):
 
+            cmp_name = "<unknown>"
+            cmp_module_name = ""
+
             try:
                 cmp_name = component["type"]
                 cmp_config = component.get("config", {})
 
-                cmp_module = __import__(f"crabber.components.{cmp_name}", fromlist=["get_handler"])
+                cmp_module_name = f"crabber.components.{cmp_name}"
+                cmp_module = importlib.import_module(cmp_module_name)
                 cmp_events = component.get("events", cmp_module.default_events)
 
                 handler = cmp_module.get_handler(
@@ -67,8 +72,13 @@ def main() -> None:
 
                 logger.info(f"added {cmp_name} component to {cname}")
 
+            except ModuleNotFoundError as e:
+                if e.name == cmp_module_name or cmp_module_name.startswith(f"{e.name}."):
+                    logger.warning(f"unknown component type {cmp_name}")
+                else:
+                    logger.error(f"failed to register component {cmp_name}: {e}")
             except Exception as e:
-                logger.error(f"failed to register component: {e}")
+                logger.error(f"failed to register component {cmp_name}: {e}")
 
         crabber.start() # just to trigger online callbacks
         crabbers.append(crabber)
