@@ -9,7 +9,12 @@ from crabber.misc import jsonify
 default_events = []
 
 
-def get_handler(ctx: Crabber, groups: list[int] | None = None, users: list[int] | None = None, *args, **kwargs) -> Callable[[dict], Awaitable[None]]:
+def get_handler(
+    ctx: Crabber,
+    participate: bool = False,
+    groups: list[int] | None = None, users: list[int] | None = None,
+    *args, **kwargs,
+) -> Callable[[dict], Awaitable[None]]:
 
     logger = ctx.logger
     groups = groups or []
@@ -35,6 +40,13 @@ def get_handler(ctx: Crabber, groups: list[int] | None = None, users: list[int] 
 
             if (lot_id := data.get("id", -1)) < 0: return
             danmu = data.get("danmu", "[EMPTY]")
+
+            if danmu and danmu != "[EMPTY]" and participate and ctx.room and ctx.has_credential:
+                # idk how to participate, try to send a danmaku
+                ctx.add_task(ctx.room.send_danmaku(
+                    danmaku=danmu,
+                    room_id=ctx.room_id,
+                ))
 
             anchor_record[lot_id] = danmu
         except Exception as e:

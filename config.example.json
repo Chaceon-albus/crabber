@@ -83,6 +83,7 @@
                     "type": "europa",
                     "__COMMENT__": "europa requires napcat service if config presents",
                     "config": {
+                        "participate": false,
                         "groups": [123456789, 1145141919810],
                         "users": [12345678]
                     }
