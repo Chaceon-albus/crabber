@@ -151,9 +151,9 @@ def get_handler(
                     if dn:
                         await parrot_forward_dynamic(dn, parrot_prefix)
                         await asyncio.sleep(cooldown)
-                        # marked the id_str on success
+                        # Best-effort forwarding intentionally treats missed forwards as handled.
                         dynamic_memory[id_str] = True
-                        logger.debug(f"added dynamic {id_str} into memory, reason: forward success")
+                        logger.debug(f"added dynamic {id_str} into memory, reason: forward attempt complete")
 
             except Exception as e:
                 logger.error(f"failed to fetch new dynamics: {e!r}")
@@ -245,7 +245,7 @@ def build_message_from_module(module_dynamic: dict, prefix: str="") -> list[dict
 
 def ensure_bili_url(url: str) -> str:
     url = f"https:{url}" if url.startswith("//") else url
-    url.replace("http://", "https://")
+    url = url.replace("http://", "https://", 1)
     return url
 
 
