@@ -1,5 +1,7 @@
 from typing import Callable, Awaitable
 
+from bilibili_api import Danmaku
+
 from crabber.crabber import Crabber
 from crabber.services import NapCatService
 from crabber.components import empty_handler
@@ -44,7 +46,7 @@ def get_handler(
             if danmu and danmu != "[EMPTY]" and participate and ctx.room and ctx.has_credential:
                 # idk how to participate, try to send a danmaku
                 ctx.add_task(ctx.room.send_danmaku(
-                    danmaku=danmu,
+                    danmaku=Danmaku(danmu),
                     room_id=ctx.room_id,
                 ))
 
