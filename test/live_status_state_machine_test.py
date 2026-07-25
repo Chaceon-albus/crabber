@@ -7,6 +7,8 @@ import asyncio
 import logging
 import sys
 import tempfile
+import threading
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -17,7 +19,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from crabber.crabber import Crabber
 from crabber.live_stream import LiveStreamManager, StreamStatus
 from crabber.room_info import RoomInfo
-from crabber.components import chatter, recorder
+from crabber.components import chatter, gift_logger, recorder
 
 
 logging.basicConfig(level=logging.CRITICAL)
@@ -86,8 +88,10 @@ class FakeSchedulerJob:
 class FakeScheduler:
     def __init__(self) -> None:
         self.jobs: list[FakeSchedulerJob] = []
+        self.calls: list[tuple[tuple[Any, ...], dict[str, Any], int]] = []
 
     def add_job(self, *args, **kwargs) -> FakeSchedulerJob:
+        self.calls.append((args, kwargs, threading.get_ident()))
         job = FakeSchedulerJob()
         self.jobs.append(job)
         return job
@@ -217,6 +221,103 @@ async def test_live_events_after_start_dispatch_once() -> None:
     assert events == ["online", "streaming", "offline"]
 
 
+async def test_live_events_accept_real_id_for_display_room_id() -> None:
+    ctx, stream, events = make_crabber([room_response(0)], started=True)
+    ctx.room_id = 12345  # configured display (short) ID
+    handler = ctx._get_live_status_handler()
+
+    await handler({"room_real_id": 67890, "data": {"cmd": "LIVE", "live_time": 1_700_000_000}})
+
+    assert events == ["online"]
+    assert ctx.room_info.is_online is True
+    assert stream.status == StreamStatus.ONLINE
+
+
+async def test_add_job_registers_coroutine_on_crabber_loop() -> None:
+    ctx = object.__new__(Crabber)
+    ctx.logger = LOGGER
+    ctx.loop = asyncio.get_running_loop()
+    ctx.scheduler = FakeScheduler()
+    ctx.jobs = []
+    ran = 0
+    loop_thread_id = threading.get_ident()
+
+    async def check_status() -> None:
+        nonlocal ran
+        ran += 1
+
+    job = await asyncio.to_thread(ctx.add_job, check_status, "interval", seconds=60)
+
+    assert job is ctx.scheduler.jobs[0]
+    args, kwargs, registered_thread_id = ctx.scheduler.calls[0]
+    assert args[0] is check_status
+    assert kwargs["seconds"] == 60
+    assert registered_thread_id == loop_thread_id
+    await args[0]()
+    assert ran == 1
+
+
+async def test_gift_events_wait_for_state_recovery() -> None:
+    class FakeGiftDatabase:
+        def __init__(self) -> None:
+            self.recovery_started = asyncio.Event()
+            self.release_recovery = asyncio.Event()
+            self.recorded_gifts: list[dict[str, Any]] = []
+            self.updated_stats: list[dict[str, Any]] = []
+
+        async def get_gift_summary(self, *_: Any) -> dict[str, Any]:
+            self.recovery_started.set()
+            await self.release_recovery.wait()
+            return {"gift_revenue": Decimal("10"), "guard_revenue": Decimal(0), "sc_revenue": Decimal(0)}
+
+        async def record_gift(self, **kwargs: Any) -> None:
+            self.recorded_gifts.append(kwargs)
+
+        async def update_stats(self, **kwargs: Any) -> None:
+            self.updated_stats.append(kwargs)
+
+    database = FakeGiftDatabase()
+    info = RoomInfo(id=100, is_online=True)
+    ctx = SimpleNamespace(
+        logger=LOGGER,
+        room_id=100,
+        room_info=info,
+        db=database,
+        recovery_event=asyncio.Event(),
+        tasks=[],
+        online_callbacks=[],
+        offline_callbacks=[],
+    )
+
+    def add_task(coro: Any) -> asyncio.Task:
+        task = asyncio.create_task(coro)
+        ctx.tasks.append(task)
+        return task
+
+    ctx.add_task = add_task
+    ctx.add_online_callback = ctx.online_callbacks.append
+    ctx.add_offline_callback = ctx.offline_callbacks.append
+
+    handler = gift_logger.get_handler(ctx)
+    await database.recovery_started.wait()
+    gift_task = asyncio.create_task(handler({
+        "data": {"cmd": "SEND_GIFT", "data": {"price": 5_000, "num": 1}},
+    }))
+    await asyncio.sleep(0)
+    assert database.recorded_gifts == []
+
+    database.release_recovery.set()
+    await gift_task
+    assert len(database.recorded_gifts) == 1
+
+    await ctx.offline_callbacks[0](info)
+    assert database.updated_stats[0]["gift_revenue"] == Decimal("15")
+
+    for task in ctx.tasks:
+        task.cancel()
+    await asyncio.gather(*ctx.tasks, return_exceptions=True)
+
+
 async def test_recorder_subscribes_without_live_network() -> None:
     ctx = SimpleNamespace(
         logger=LOGGER,
@@ -317,6 +418,9 @@ async def main() -> None:
         test_check_live_status_transitions,
         test_live_events_before_start_do_not_dispatch_callbacks,
         test_live_events_after_start_dispatch_once,
+        test_live_events_accept_real_id_for_display_room_id,
+        test_add_job_registers_coroutine_on_crabber_loop,
+        test_gift_events_wait_for_state_recovery,
         test_recorder_subscribes_without_live_network,
         test_chatter_registers_and_cleans_cron_jobs,
         test_dispatch_stops_immediately_when_offline,
