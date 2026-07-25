@@ -110,8 +110,8 @@ class NapCatService(BaseService):
         for uid in users:
             try:
                 await self.send_msg(
-                    message_type="group",
-                    group_id=f"{uid}",
+                    message_type="private",
+                    user_id=f"{uid}",
                     message=content,
                 )
                 await asyncio.sleep(cooldown)
