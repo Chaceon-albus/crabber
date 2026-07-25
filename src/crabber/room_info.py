@@ -20,8 +20,8 @@ class RoomInfo:
     title: str = ""
     cover: str = ""
     is_online: bool = False
-    start_time: datetime = datetime.now()
-    end_time: datetime = datetime.now()
+    start_time: datetime = field(default_factory=datetime.now)
+    end_time: datetime = field(default_factory=datetime.now)
 
     stream: LiveStreamManager | None = None
     status_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
