@@ -109,15 +109,26 @@ class Crabber:
         if self.loop is None or not self.loop.is_running() or self.scheduler is None:
             raise RuntimeError("crabber is not ready to add job")
 
-        def thread_safe_wrapper(*wrapper_args, **inner_kwargs):
-            asyncio.run_coroutine_threadsafe(func(*wrapper_args, **inner_kwargs), self.loop) # type: ignore
+        def register_job() -> Job:
+            # AsyncIOScheduler awaits coroutine functions itself. Registering the
+            # coroutine directly keeps its execution within APScheduler's
+            # max_instances and coalescing controls.
+            return self.scheduler.add_job(func, trigger, args=args, **kwargs)
 
-        job = self.scheduler.add_job(
-            thread_safe_wrapper,
-            trigger,
-            args=args,
-            **kwargs
-        )
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+
+        if running_loop is self.loop:
+            job = register_job()
+        else:
+            async def register_job_on_loop() -> Job:
+                return register_job()
+
+            # AsyncIOScheduler is bound to Crabber's loop, so external callers
+            # must add jobs on that loop as well.
+            job = asyncio.run_coroutine_threadsafe(register_job_on_loop(), self.loop).result()
 
         self.jobs.append(job)
 
