@@ -63,6 +63,10 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
 
     async def handler(event: dict) -> None:
+        # Do not update in-memory totals until recovery has loaded the persisted
+        # baseline. Otherwise a late recovery result can overwrite this event.
+        await state_recovered_event.wait()
+
         cmd = event.get("data", {}).get("cmd", "unknown")
         data = event.get("data", {}).get("data", {})
         value_in_cny = Decimal(0)
