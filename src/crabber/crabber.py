@@ -72,6 +72,7 @@ class Crabber:
         self.recovery_event.set()
 
         self._is_ready = threading.Event()
+        self._startup_error: Exception | None = None
 
         self.thread = threading.Thread(
             target=self._thread_entry,
@@ -82,6 +83,8 @@ class Crabber:
         self.thread.start()
 
         self._is_ready.wait() # wait until the thread is ready
+        if self._startup_error is not None:
+            raise RuntimeError(f"failed to start crabber for room {self.room_id}") from self._startup_error
 
 
     def add_handler(self, event_name: str, handler: Callable):
@@ -211,7 +214,9 @@ class Crabber:
 
             self.loop.run_forever()
         except Exception as e:
-            self.logger.error(e)
+            self._startup_error = e
+            self._is_ready.set()
+            self.logger.exception(f"failed to start crabber: {e}")
         finally:
             try:
                 self.loop.run_until_complete(self._shutdown())
@@ -403,7 +408,6 @@ class Crabber:
     def _get_live_status_handler(self) -> Callable[[dict], asyncio._CoroutineLike]:
 
         async def handler(event: dict) -> None:
-
             if (room_real_id:=event.get("room_real_id", -1)) != self.room_id:
                 self.logger.debug(f"ignoring live status related event: {room_real_id} != {self.room_id}\n{jsonify(event)}")
                 return
