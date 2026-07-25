@@ -487,22 +487,26 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
             await iris_transcribe_event.wait()
             iris_transcribe_event.clear()
 
-            speech = speech_list.copy()
-            uevent = user_events.copy()
-
             nonlocal speech_pos, event_pos, last_danmaku_time
 
             # at least 1 speech
-            if speech_pos < len(speech) and event_pos <= len(uevent):
+            if speech_pos < len(speech_list) and event_pos <= len(user_events):
                 spos = speech_pos
                 epos = event_pos
 
                 # move to the end
-                speech_pos = len(speech)
-                event_pos = len(uevent)
+                speech_pos = len(speech_list)
+                event_pos = len(user_events)
 
-                speech = speech[spos:]
-                uevent = uevent[epos:]
+                speech = speech_list[spos:]
+                uevent = user_events[epos:]
+
+                # The consumed entries are no longer needed. Keep the lists bounded
+                # during long streams instead of retaining their full history.
+                del speech_list[:speech_pos]
+                del user_events[:event_pos]
+                speech_pos = 0
+                event_pos = 0
             else:
                 continue
 
