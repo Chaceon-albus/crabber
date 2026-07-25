@@ -1,12 +1,11 @@
 import asyncio
-
-from typing import Callable, Awaitable
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Callable, Awaitable
 
 from crabber.crabber import Crabber
-from crabber.room_info import RoomInfo
 from crabber.misc import coin_to_cny, format_timedelta
+from crabber.room_info import RoomInfo
 
 
 default_events = ["SEND_GIFT", "USER_TOAST_MSG", "SUPER_CHAT_MESSAGE"]
@@ -167,7 +166,7 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
                 area=info.area,
                 cover_url=info.cover,
                 start_time=info.start_time,
-                end_time=info.start_time,
+                end_time=datetime.fromtimestamp(0, timezone.utc),
                 offline_gift_revenue=gift_revenue,
                 offline_guard_revenue=guard_revenue,
                 offline_sc_revenue=sc_revenue,

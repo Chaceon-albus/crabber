@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import inspect, text
+from sqlalchemy import func, inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel, select, col
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -89,7 +89,7 @@ class SqliteAdapter(BaseAdapter):
                     gift_revenue=gift_revenue.quantize(Decimal("0.00")),
                     guard_revenue=guard_revenue.quantize(Decimal("0.00")),
                     sc_revenue=sc_revenue.quantize(Decimal("0.00")),
-                    summary=summary, details=details
+                    danmaku_count=0, summary=summary, details=details
                 )
                 session.add(record)
                 await session.commit()
@@ -103,10 +103,18 @@ class SqliteAdapter(BaseAdapter):
             )
             record = (await session.exec(statement)).first()
             if record:
+                danmaku_count_statement = select(func.count()).select_from(DanmakuRecord).where(
+                    DanmakuRecord.room_id == room_id,
+                    DanmakuRecord.timestamp >= int(start_time.timestamp()),
+                    DanmakuRecord.timestamp <= int(end_time.timestamp()),
+                )
+                danmaku_count = (await session.exec(danmaku_count_statement)).one()
+
                 record.end_time = int(end_time.timestamp())
                 record.gift_revenue = gift_revenue.quantize(Decimal("0.00"))
                 record.guard_revenue = guard_revenue.quantize(Decimal("0.00"))
                 record.sc_revenue = sc_revenue.quantize(Decimal("0.00"))
+                record.danmaku_count = danmaku_count
                 record.summary = summary
                 record.details = details
                 session.add(record)
@@ -122,6 +130,7 @@ class SqliteAdapter(BaseAdapter):
                     "room_id": record.room_id,
                     "start_time": datetime.fromtimestamp(record.start_time),
                     "end_time": datetime.fromtimestamp(record.end_time),
+                    "danmaku_count": record.danmaku_count,
                 }
         return None
 
@@ -167,3 +176,8 @@ class SqliteAdapter(BaseAdapter):
                 await conn.execute(text("ALTER TABLE danmaku_record ADD COLUMN mode INT DEFAULT 1;"))
             if "color" not in danmaku_cols:
                 await conn.execute(text("ALTER TABLE danmaku_record ADD COLUMN color INT DEFAULT 16777215;"))
+
+        # 2026-07-24: Added `danmaku_count` column to `live_record`.
+        live_cols = await conn.run_sync(get_columns, "live_record")
+        if live_cols and "danmaku_count" not in live_cols:
+            await conn.execute(text("ALTER TABLE live_record ADD COLUMN danmaku_count INT NOT NULL DEFAULT 0;"))

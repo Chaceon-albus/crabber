@@ -71,5 +71,6 @@ class LiveRecord(SQLModel, table=True):
     gift_revenue: Decimal = Field(default=Decimal(0), sa_column=Column(StringDecimal(TORTOISE_DECIMAL_LENGTH)))
     guard_revenue: Decimal = Field(default=Decimal(0), sa_column=Column(StringDecimal(TORTOISE_DECIMAL_LENGTH)))
     sc_revenue: Decimal = Field(default=Decimal(0), sa_column=Column(StringDecimal(TORTOISE_DECIMAL_LENGTH)))
+    danmaku_count: int = Field(default=0)
     summary: str = Field(default="")
     details: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))

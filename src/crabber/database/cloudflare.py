@@ -73,11 +73,11 @@ class CloudflareD1Adapter(BaseAdapter):
         details_str = json.dumps(details)
         sql = """
             INSERT INTO live_record
-            (room_id, title, area, cover_url, start_time, end_time, offline_gift_revenue, offline_guard_revenue, offline_sc_revenue, gift_revenue, guard_revenue, sc_revenue, summary, details)
-            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            (room_id, title, area, cover_url, start_time, end_time, offline_gift_revenue, offline_guard_revenue, offline_sc_revenue, gift_revenue, guard_revenue, sc_revenue, danmaku_count, summary, details)
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             WHERE NOT EXISTS (SELECT 1 FROM live_record WHERE room_id=? AND start_time=?)
         """
-        params = [room_id, title, area, cover_url, int(start_time.timestamp()), int(end_time.timestamp()), f"{offline_gift_revenue:.2f}", f"{offline_guard_revenue:.2f}", f"{offline_sc_revenue:.2f}", f"{gift_revenue:.2f}", f"{guard_revenue:.2f}", f"{sc_revenue:.2f}", summary, details_str, room_id, int(start_time.timestamp())]
+        params = [room_id, title, area, cover_url, int(start_time.timestamp()), int(end_time.timestamp()), f"{offline_gift_revenue:.2f}", f"{offline_guard_revenue:.2f}", f"{offline_sc_revenue:.2f}", f"{gift_revenue:.2f}", f"{guard_revenue:.2f}", f"{sc_revenue:.2f}", 0, summary, details_str, room_id, int(start_time.timestamp())]
 
         async with self._write_lock:
             await self._execute_sql(sql, params)
@@ -86,10 +86,27 @@ class CloudflareD1Adapter(BaseAdapter):
         details_str = json.dumps(details)
         sql = """
             UPDATE live_record
-            SET end_time=?, gift_revenue=?, guard_revenue=?, sc_revenue=?, summary=?, details=?
+            SET end_time=?, gift_revenue=?, guard_revenue=?, sc_revenue=?, summary=?, details=?,
+                danmaku_count=(
+                    SELECT COUNT(*)
+                    FROM danmaku_record
+                    WHERE room_id=? AND timestamp>=? AND timestamp<=?
+                )
             WHERE room_id=? AND start_time=?
         """
-        params = [int(end_time.timestamp()), f"{gift_revenue:.2f}", f"{guard_revenue:.2f}", f"{sc_revenue:.2f}", summary, details_str, room_id, int(start_time.timestamp())]
+        params = [
+            int(end_time.timestamp()),
+            f"{gift_revenue:.2f}",
+            f"{guard_revenue:.2f}",
+            f"{sc_revenue:.2f}",
+            summary,
+            details_str,
+            room_id,
+            int(start_time.timestamp()),
+            int(end_time.timestamp()),
+            room_id,
+            int(start_time.timestamp()),
+        ]
 
         async with self._write_lock:
             await self._execute_sql(sql, params)

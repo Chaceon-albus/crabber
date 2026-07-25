@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 import sys
 import tempfile
 import threading
+from contextlib import closing
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,6 +23,7 @@ from crabber.crabber import Crabber
 from crabber.live_stream import LiveStreamManager, StreamStatus
 from crabber.room_info import RoomInfo
 from crabber.components import chatter, gift_logger, recorder
+from crabber.database.sqlite import SqliteAdapter
 
 
 logging.basicConfig(level=logging.CRITICAL)
@@ -318,6 +322,168 @@ async def test_gift_events_wait_for_state_recovery() -> None:
     await asyncio.gather(*ctx.tasks, return_exceptions=True)
 
 
+async def test_gift_logger_marks_new_live_record_as_open() -> None:
+    class FakeGiftDatabase:
+        def __init__(self) -> None:
+            self.recorded_stats: list[dict[str, Any]] = []
+
+        async def get_latest_live_record(self, *_: Any) -> None:
+            return None
+
+        async def get_gift_summary(self, *_: Any) -> dict[str, Decimal]:
+            return {
+                "gift_revenue": Decimal(0),
+                "guard_revenue": Decimal(0),
+                "sc_revenue": Decimal(0),
+            }
+
+        async def record_stats(self, **kwargs: Any) -> None:
+            self.recorded_stats.append(kwargs)
+
+    database = FakeGiftDatabase()
+    info = RoomInfo(
+        id=100,
+        is_online=False,
+        start_time=datetime.fromtimestamp(1_700_000_000),
+    )
+    ctx = SimpleNamespace(
+        logger=LOGGER,
+        room_id=100,
+        room_info=info,
+        db=database,
+        tasks=[],
+        online_callbacks=[],
+        offline_callbacks=[],
+    )
+
+    def add_task(coro: Any) -> asyncio.Task:
+        task = asyncio.create_task(coro)
+        ctx.tasks.append(task)
+        return task
+
+    ctx.add_task = add_task
+    ctx.add_online_callback = ctx.online_callbacks.append
+    ctx.add_offline_callback = ctx.offline_callbacks.append
+
+    gift_logger.get_handler(ctx)
+    await ctx.online_callbacks[0](info)
+
+    assert database.recorded_stats[0]["end_time"].timestamp() == 0
+
+    for task in ctx.tasks:
+        task.cancel()
+    await asyncio.gather(*ctx.tasks, return_exceptions=True)
+
+
+async def test_sqlite_migrates_live_record_danmaku_count() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        database_path = Path(tmpdir) / "legacy.sqlite"
+        with closing(sqlite3.connect(database_path)) as conn:
+            conn.execute(
+                "CREATE TABLE live_record (id INTEGER PRIMARY KEY, room_id INTEGER NOT NULL)"
+            )
+            conn.execute("INSERT INTO live_record (room_id) VALUES (100)")
+            conn.commit()
+
+        adapter = SqliteAdapter({"path": str(database_path)}, LOGGER)
+        await adapter._ensure_init()
+        await adapter.close()
+
+        with closing(sqlite3.connect(database_path)) as conn:
+            columns = {
+                row[1]: row
+                for row in conn.execute("PRAGMA table_info(live_record)")
+            }
+            danmaku_count = conn.execute(
+                "SELECT danmaku_count FROM live_record WHERE room_id=100"
+            ).fetchone()
+
+        assert columns["danmaku_count"][3] == 1
+        assert columns["danmaku_count"][4] == "0"
+        assert danmaku_count == (0,)
+
+
+async def test_sqlite_counts_danmaku_when_live_ends() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        database_path = Path(tmpdir) / "current.sqlite"
+        adapter = SqliteAdapter({"path": str(database_path)}, LOGGER)
+        start_time = datetime.fromtimestamp(1_700_000_000)
+        end_time = start_time + timedelta(minutes=1)
+
+        await adapter.record_stats(
+            room_id=100,
+            title="title",
+            area="area",
+            cover_url="cover",
+            start_time=start_time,
+            end_time=datetime.fromtimestamp(0, timezone.utc),
+            offline_gift_revenue=Decimal(0),
+            offline_guard_revenue=Decimal(0),
+            offline_sc_revenue=Decimal(0),
+            gift_revenue=Decimal(0),
+            guard_revenue=Decimal(0),
+            sc_revenue=Decimal(0),
+            summary="",
+            details={},
+        )
+        await adapter.record_danmaku(
+            room_id=100,
+            user="viewer",
+            uid=1000,
+            content="first",
+            timestamp=start_time,
+        )
+        await adapter.record_danmaku(
+            room_id=100,
+            user="viewer",
+            uid=1000,
+            content="second",
+            timestamp=end_time,
+        )
+        await adapter.record_danmaku(
+            room_id=100,
+            user="viewer",
+            uid=1000,
+            content="too early",
+            timestamp=start_time - timedelta(seconds=1),
+        )
+        await adapter.record_danmaku(
+            room_id=100,
+            user="viewer",
+            uid=1000,
+            content="too late",
+            timestamp=end_time + timedelta(seconds=1),
+        )
+        await adapter.record_danmaku(
+            room_id=101,
+            user="viewer",
+            uid=1000,
+            content="other room",
+            timestamp=start_time,
+        )
+
+        await adapter.update_stats(
+            room_id=100,
+            start_time=start_time,
+            end_time=end_time,
+            gift_revenue=Decimal(0),
+            guard_revenue=Decimal(0),
+            sc_revenue=Decimal(0),
+            summary="",
+            details={},
+        )
+        latest_record = await adapter.get_latest_live_record(100)
+        await adapter.close()
+
+        with closing(sqlite3.connect(database_path)) as conn:
+            live_record = conn.execute(
+                "SELECT end_time, danmaku_count FROM live_record WHERE room_id=100"
+            ).fetchone()
+
+        assert live_record == (int(end_time.timestamp()), 2)
+        assert latest_record and latest_record["danmaku_count"] == 2
+
+
 async def test_recorder_subscribes_without_live_network() -> None:
     ctx = SimpleNamespace(
         logger=LOGGER,
@@ -421,6 +587,9 @@ async def main() -> None:
         test_live_events_accept_real_id_for_display_room_id,
         test_add_job_registers_coroutine_on_crabber_loop,
         test_gift_events_wait_for_state_recovery,
+        test_gift_logger_marks_new_live_record_as_open,
+        test_sqlite_migrates_live_record_danmaku_count,
+        test_sqlite_counts_danmaku_when_live_ends,
         test_recorder_subscribes_without_live_network,
         test_chatter_registers_and_cleans_cron_jobs,
         test_dispatch_stops_immediately_when_offline,
