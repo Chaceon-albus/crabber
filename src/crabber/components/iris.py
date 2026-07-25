@@ -85,6 +85,11 @@ CORE_GUARDRAILS = """
 
 
 def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Callable[[dict], Awaitable[None]]:
+    raise RuntimeError(
+        "Iris is deprecated and cannot be initialized: component configuration is "
+        "ignored by the current integration, and LLM conversation history grows "
+        "without bound. Disable Iris in the bot configuration."
+    )
 
     logger = ctx.logger
 
