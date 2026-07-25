@@ -721,10 +721,18 @@ class Crabber:
         if self.danmaku:
             await self.danmaku.disconnect()
 
+        try:
+            await biliapi.get_client().close()
+        except Exception as e:
+            self.logger.debug(f"failed to close bilibili API client: {e}")
+
         service_close_tasks = [service.close() for service in self.services.values()]
         if service_close_tasks:
             results = await asyncio.gather(*service_close_tasks, return_exceptions=True)
             check_exceptions(results, msg="failed to close service", logger=self.logger)
+
+        if self.db:
+            await self.db.close()
 
 
 if __name__ == "__main__":

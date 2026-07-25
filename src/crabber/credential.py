@@ -38,11 +38,13 @@ class CredentialManager:
         self._lock = threading.Lock()
         self._loop = asyncio.new_event_loop()
         self.scheduler = AsyncIOScheduler(event_loop=self._loop)
+        self._thread: threading.Thread | None = None
 
         if cred_json:
             self.has_cred = True
             # run a background thread
-            threading.Thread(target=self._loop.run_forever, daemon=True).start()
+            self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
+            self._thread.start()
             self.start_monitoring()
 
 
@@ -124,6 +126,29 @@ class CredentialManager:
         )
         self.scheduler.start()
         logger.info(f"started credential monitoring with interval of {self._interval} seconds")
+
+    def close(self) -> None:
+        if self._loop.is_running():
+            async def shutdown_resources() -> None:
+                if self.scheduler.running:
+                    self.scheduler.shutdown(wait=False)
+                try:
+                    await biliapi.get_client().close()
+                except Exception as e:
+                    logger.debug(f"failed to close credential API client: {e}")
+
+            try:
+                asyncio.run_coroutine_threadsafe(shutdown_resources(), self._loop).result(timeout=10)
+            except Exception as e:
+                logger.warning(f"failed to shut down credential resources: {e}")
+        if self._loop.is_running():
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        if self._thread and self._thread is not threading.current_thread():
+            self._thread.join(timeout=10)
+        if not self._loop.is_closed() and (self._thread is None or not self._thread.is_alive()):
+            self._loop.close()
+        elif self._thread and self._thread.is_alive():
+            logger.warning("credential loop did not stop before cleanup timeout")
 
 
 if __name__ == "__main__":

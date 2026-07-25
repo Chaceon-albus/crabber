@@ -8,6 +8,9 @@ class BaseAdapter:
     def __init__(self):
         pass
 
+    async def close(self) -> None:
+        pass
+
     async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, total_value: Decimal, comment: str | None, timestamp: datetime):
         pass
 

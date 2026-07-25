@@ -34,6 +34,12 @@ class Database(BaseAdapter):
                 adapter_name = self.adapters[i].__class__.__name__
                 self.logger.error(f"{adapter_name} failed to {task_name}: {result}")
 
+    async def close(self) -> None:
+        results = await asyncio.gather(
+            *(adapter.close() for adapter in self.adapters), return_exceptions=True
+        )
+        self._check_results(results, "close")
+
     async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, total_value: Decimal, comment: str | None, timestamp: datetime):
         tasks = [
             adapter.record_gift(room_id, user, uid, gift, num, total_value, comment, timestamp)

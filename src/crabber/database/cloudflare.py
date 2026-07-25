@@ -32,6 +32,9 @@ class CloudflareD1Adapter(BaseAdapter):
         self.client = AsyncCloudflare(api_token=self.api_token)
         self._write_lock = asyncio.Lock()
 
+    async def close(self) -> None:
+        await self.client.close()
+
     async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, total_value: Decimal, comment: str | None, timestamp: datetime):
         comment_val = comment if comment is not None else ""
         sql = """

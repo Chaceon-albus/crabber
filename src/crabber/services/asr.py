@@ -55,7 +55,10 @@ class AsrService(BaseService):
         sessions = tuple(self._sessions)
         self._sessions.clear()
         if sessions:
-            await asyncio.gather(*(session.stop() for session in sessions), return_exceptions=True)
+            results = await asyncio.gather(*(session.stop() for session in sessions), return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    self.logger.warning(f"failed to stop ASR session: {result}")
 
 
 

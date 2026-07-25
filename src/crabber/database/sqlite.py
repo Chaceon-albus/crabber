@@ -44,6 +44,12 @@ class SqliteAdapter(BaseAdapter):
 
             self._initialized = True
 
+    async def close(self) -> None:
+        if self._engine is not None:
+            await self._engine.dispose()
+            self._engine = None
+            self._initialized = False
+
     async def record_gift(self, room_id: int, user: str, uid: int, gift: str, num: int, total_value: Decimal, comment: str | None, timestamp: datetime):
         await self._ensure_init()
         async with AsyncSession(self._engine) as session:
