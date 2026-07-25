@@ -1,3 +1,5 @@
+"""Record and summarize gift-related live events."""
+
 import asyncio
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -6,9 +8,15 @@ from typing import Callable, Awaitable
 from crabber.crabber import Crabber
 from crabber.misc import coin_to_cny, format_timedelta
 from crabber.room_info import RoomInfo
+from .protocol import parse_send_gift_v2, SendGiftV2DecodeError
 
 
-default_events = ["SEND_GIFT", "USER_TOAST_MSG", "SUPER_CHAT_MESSAGE"]
+default_events = [
+    "SEND_GIFT",
+    "SEND_GIFT_V2",
+    "USER_TOAST_MSG",
+    "SUPER_CHAT_MESSAGE",
+]
 
 
 def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[None]]:
@@ -74,29 +82,43 @@ def get_handler(ctx: Crabber, *args, **kwargs) -> Callable[[dict], Awaitable[Non
 
         match cmd:
 
-            case "SEND_GIFT":
-                uname = data.get("uname", "[unknown]")
-                uid = data.get("uid", -1)
-                user = data.get("sender_uinfo", {}).get("base", {}).get("name", uname)
+            case "SEND_GIFT" | "SEND_GIFT_V2":
+                if cmd == "SEND_GIFT_V2":
+                    try:
+                        gift_records = parse_send_gift_v2(data.get("pb", ""))
+                    except SendGiftV2DecodeError as e:
+                        logger.warning(f"failed to decode SEND_GIFT_V2 event: {e}")
+                        return
 
-                action = data.get("action", "投喂")
-                gift_name = data.get("giftName", "[unknown]")
-                num = data.get("num", 1)
-                price = data.get("price", 0)
+                    if not gift_records:
+                        logger.warning("received SEND_GIFT_V2 event without gift records")
+                        return
+                else:
+                    gift_records = [data]
 
-                value_in_cny = coin_to_cny(price * num)
+                for gift_data in gift_records:
+                    uname = gift_data.get("uname", "[unknown]")
+                    uid = gift_data.get("uid", -1)
+                    user = gift_data.get("sender_uinfo", {}).get("base", {}).get("name", uname)
 
-                gift_revenue += value_in_cny
-                logger.debug(f"{user} {action}了 {gift_name}×{num}，价值￥{value_in_cny:.2f}")
+                    action = gift_data.get("action", "投喂")
+                    gift_name = gift_data.get("giftName", "[unknown]")
+                    num = gift_data.get("num", 1)
+                    price = gift_data.get("price", 0)
 
-                if ctx.db:
-                    await ctx.db.record_gift(
-                        room_id=ctx.room_id,
-                        user=user, uid=uid,
-                        gift=gift_name, num=num,
-                        total_value=value_in_cny,
-                        comment="", timestamp=datetime.now(),
-                    )
+                    value_in_cny = coin_to_cny(price * num)
+
+                    gift_revenue += value_in_cny
+                    logger.debug(f"{user} {action}了 {gift_name}×{num}，价值￥{value_in_cny:.2f}")
+
+                    if ctx.db:
+                        await ctx.db.record_gift(
+                            room_id=ctx.room_id,
+                            user=user, uid=uid,
+                            gift=gift_name, num=num,
+                            total_value=value_in_cny,
+                            comment="", timestamp=datetime.now(),
+                        )
 
             case "USER_TOAST_MSG":
                 uid = data.get("uid", -1)
