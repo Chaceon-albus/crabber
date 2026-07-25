@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import weakref
 
 from typing import ClassVar
 
@@ -29,6 +30,7 @@ class AsrService(BaseService):
         self.config = config
         self.logger = logger
         self.provider = self.config.get("provider")
+        self._sessions: weakref.WeakSet[FunAsrSession | DoubaoAsrSession] = weakref.WeakSet()
 
     def new_session(
         self,
@@ -41,11 +43,19 @@ class AsrService(BaseService):
                 asr_params = self.config.get("fun_asr_params", {})
                 if "api_key" not in asr_params:
                     raise ValueError("api_key not configured in asr_params")
-                return FunAsrSession(fun_asr_callback, asr_params)
+                session = FunAsrSession(fun_asr_callback, asr_params)
             case "doubao-asr":
-                return DoubaoAsrSession()
+                session = DoubaoAsrSession()
             case _:
                 raise ValueError(f"unknown asr provider: {self.provider}")
+        self._sessions.add(session)
+        return session
+
+    async def close(self) -> None:
+        sessions = tuple(self._sessions)
+        self._sessions.clear()
+        if sessions:
+            await asyncio.gather(*(session.stop() for session in sessions), return_exceptions=True)
 
 
 
