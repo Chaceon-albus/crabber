@@ -335,8 +335,6 @@ def get_handler(ctx: Crabber, config: dict | None = None, *args, **kwargs) -> Ca
         event_pos = 0
         last_danmaku_time = datetime.now()
 
-        await asyncio.sleep(30) # let llm or something else to cooldown
-
 
     async def _iris_encoder(sample_rate: int = 16000) -> None:
 
