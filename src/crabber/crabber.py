@@ -408,9 +408,10 @@ class Crabber:
     def _get_live_status_handler(self) -> Callable[[dict], asyncio._CoroutineLike]:
 
         async def handler(event: dict) -> None:
-            if (room_real_id:=event.get("room_real_id", -1)) != self.room_id:
-                self.logger.debug(f"ignoring live status related event: {room_real_id} != {self.room_id}\n{jsonify(event)}")
-                return
+            # LiveDanmaku delivers events for the room it was created for.  Do not
+            # compare its real room ID with self.room_id here: self.room_id may be
+            # a display (short) room ID, which intentionally differs from the
+            # real room ID supplied by the event.
 
             if self.room_info.stream is None: self.room_info.stream = LiveStreamManager(ctx=self) # make linter happy
 
