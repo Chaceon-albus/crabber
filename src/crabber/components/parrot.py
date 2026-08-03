@@ -65,6 +65,16 @@ def get_handler(
         content += build_message_from_module(item.get("orig", {}).get("modules", {}).get("module_dynamic", {}), prefix="\n原动态：\n")
 
         if content:
+            # add dynamic link if not DYNAMIC_TYPE_AV
+            if not _get_bvid(item):
+                content += [{
+                    "type": "text",
+                    "data": { "text": "\n" }
+                }, {
+                    "type": "text",
+                    "data": { "text": f"https://t.bilibili.com/{dn.get_dynamic_id()}" }
+                }]
+
             logger.debug(f"sending {content}")
             await napcat.send_msg_concurrently(content, groups, users)
             logger.info(f"success to forward dynamic {dn.get_dynamic_id()} to group {groups} and user {users}")
@@ -173,13 +183,7 @@ def get_handler(
 
         # try to pay coin(s) if it's a video
         try:
-            modules = item.get("modules") or {}
-            module_dynamic = modules.get("module_dynamic") or {}
-            major = module_dynamic.get("major") or {}
-            archive = major.get("archive") or {}
-            bvid = archive.get("bvid") or ""
-
-            if bvid:
+            if (bvid:=_get_bvid(item)):
                 v = Video(bvid, credential=dn.credential)
                 accept_coin_num = 1
 
@@ -396,3 +400,12 @@ def rich_text_to_message(nodes: list) -> list[dict]:
                     }]
 
     return content
+
+
+def _get_bvid(dynamic_info_item: dict) -> str | None:
+    modules = dynamic_info_item.get("modules") or {}
+    module_dynamic = modules.get("module_dynamic") or {}
+    major = module_dynamic.get("major") or {}
+    archive = major.get("archive") or {}
+    bvid = archive.get("bvid") or None
+    return bvid
