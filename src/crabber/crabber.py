@@ -563,7 +563,7 @@ class Crabber:
                 self.room_info.area = room_info.get("area_name", self.room_info.area)
                 self.room_info.uname = anchor_info.get("base_info", {}).get("uname", self.room_info.uname)
                 self.room_info.title = room_info.get("title", self.room_info.title)
-                self.room_info.cover = room_info.get("cover", self.room_info.cover)
+                self.room_info.cover = room_info.get("cover") or self.room_info.cover
                 self.room_info.is_online = (room_info.get("live_status", self.room_info.is_online) == 1)
 
                 if self.room_info.is_online:
