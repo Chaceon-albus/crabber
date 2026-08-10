@@ -19,13 +19,21 @@ async def send_notify(
     if (napcat := ctx.get_service(NapCatService)) is None:
         return
 
-    content = (
-        # no newline needed after [CQ:image]
-        f"[CQ:image,file={room.cover}]"
-        f"{room.uname}正在直播：{room.title}\n"
-        f"分区：{room.area}\n"
-        f"https://live.bilibili.com/{room.id}"
-    )
+    if room.cover:
+        content = (
+            # no newline needed after [CQ:image]
+            f"[CQ:image,file={room.cover}]"
+            f"{room.uname}正在直播：{room.title}\n"
+            f"分区：{room.area}\n"
+            f"https://live.bilibili.com/{room.id}"
+        )
+    else:
+        ctx.logger.warning(f"cover url not found in {room}")
+        content = (
+            f"{room.uname}正在直播：{room.title}\n"
+            f"分区：{room.area}\n"
+            f"https://live.bilibili.com/{room.id}"
+        )
 
     groups = config.get("groups", [])
     users = config.get("users", [])
