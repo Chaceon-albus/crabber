@@ -72,7 +72,7 @@ def get_handler(
                     "data": { "text": "\n" }
                 }, {
                     "type": "text",
-                    "data": { "text": f"https://t.bilibili.com/{dn.get_dynamic_id()}" }
+                    "data": { "text": f"动态地址：https://t.bilibili.com/{dn.get_dynamic_id()}" }
                 }]
 
             logger.debug(f"sending {content}")

@@ -113,7 +113,7 @@ class Crabber:
             # AsyncIOScheduler awaits coroutine functions itself. Registering the
             # coroutine directly keeps its execution within APScheduler's
             # max_instances and coalescing controls.
-            return self.scheduler.add_job(func, trigger, args=args, **kwargs)
+            return self.scheduler.add_job(func, trigger, args=args, **kwargs) # type: ignore
 
         try:
             running_loop = asyncio.get_running_loop()
