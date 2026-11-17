@@ -6,7 +6,7 @@ from crabber.room_info import RoomInfo
 
 from crabber.components.empty_handler import empty_handler
 from crabber.components.notify.ntfy_provider import send_notify as send_ntfy_notify
-from crabber.components.notify.napcat_provider import send_notify as send_napcat_notify
+from crabber.components.notify.qq_provider import send_notify as send_qq_notify
 
 
 default_events = [] # no event needed for notify component
@@ -30,8 +30,8 @@ def get_handler(ctx: Crabber, channels: list[dict], *args, **kwargs) -> Callable
                 match provider := channel.get("provider", ""):
                     case "ntfy":
                         await send_ntfy_notify(ctx, room_info, channel.get("config", {}), logger)
-                    case "napcat":
-                        await send_napcat_notify(ctx, room_info, channel.get("config", {}), logger)
+                    case "qq" | "napcat": # napcat: old name, kept for existing configs
+                        await send_qq_notify(ctx, room_info, channel.get("config", {}), logger)
                     case _:
                         logger.warning(f"unknown notify provider: {provider}")
             except Exception as e:

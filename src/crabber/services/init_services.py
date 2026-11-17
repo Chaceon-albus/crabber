@@ -3,6 +3,7 @@ import logging
 from crabber.logging import logger as default_logger
 from .interface import BaseService
 from .napcat import NapCatService
+from .qqbot import QQBotService
 from .ntfy import NtfyService
 from .asr import AsrService
 from .llm import LlmService
@@ -10,6 +11,7 @@ from .llm import LlmService
 
 SERVICE_TYPES: dict[str, type[BaseService]] = {
     NapCatService.service_name: NapCatService,
+    QQBotService.service_name: QQBotService,
     NtfyService.service_name: NtfyService,
     AsrService.service_name: AsrService,
     LlmService.service_name: LlmService,

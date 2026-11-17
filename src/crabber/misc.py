@@ -4,6 +4,7 @@ import logging
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any, Sequence
+from urllib.parse import urlparse
 
 from crabber.logging import logger as default_logger
 
@@ -42,6 +43,27 @@ def check_exceptions(results: Sequence[Any], msg: str="error", logger: logging.L
 
 def safe_ts(ts: float | int) -> float:
     return ts if ts < 100_000_000_000 else ts / 1000
+
+
+def ensure_bili_url(url: str) -> str:
+    url = f"https:{url}" if url.startswith("//") else url
+    url = url.replace("http://", "https://", 1)
+    return url
+
+
+def resize_bili_image(url: str, width: int, height: int) -> str | None:
+    """Scale and center-crop an image hosted on hdslb.com to exactly width x height.
+
+    Returns None for other hosts or urls that already carry processing parameters.
+    """
+    url = ensure_bili_url(url)
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+
+    if not (host == "hdslb.com" or host.endswith(".hdslb.com")) or "@" in parsed.path or parsed.query:
+        return None
+
+    return f"{url}@{width}w_{height}h_1c.jpg"
 
 
 def safe_filename(filename: str, fallback: str = "stream_record.flv") -> str:

@@ -3,9 +3,10 @@ from typing import Callable, Awaitable
 from bilibili_api import Danmaku
 
 from crabber.crabber import Crabber
-from crabber.services import NapCatService
 from crabber.components import empty_handler
 from crabber.misc import jsonify
+from crabber.qq_send import send_qq_message
+from crabber.rich_message import Heading, Paragraph, RichMessage, Text
 
 
 default_events = []
@@ -24,12 +25,9 @@ def get_handler(
     anchor_record: dict[int, str] = {}
 
 
-    async def _send_notification(msg: str) -> None:
-        if (napcat := ctx.get_service(NapCatService)) is None:
-            return
-
+    async def _send_notification(message: RichMessage) -> None:
         try:
-            await napcat.send_msg_concurrently(msg, groups, users)
+            await send_qq_message(ctx, message, groups, users)
         except Exception as e:
             logger.error(f"failed to send award results: {e}")
 
@@ -65,23 +63,18 @@ def get_handler(
                 logger.info(f"ANCHOR_LOT_AWARD event got no id:\n{jsonify(event)}")
                 return
 
-            users = data.get("award_users", [])
+            winners = data.get("award_users", [])
             award = data.get("award_name", "[UNKNOWN]")
             num   = data.get("award_num", 1)
             danmu = anchor_record.pop(lot_id, "[UNKNOWN]")
 
-            if len(users) > 1:
-                brief = f"下列用户在天选时刻({lot_id})中通过发送“{danmu}”获得了 {award}×{num}：\n"
-            else:
-                brief = f"天选时刻({lot_id})中发送“{danmu}”并获得 {award}×{num} 的幸运儿是："
-
-            brief += "\n".join([
+            winner_lines = [
                 f"{user.get('uname', '[UNKNOWN]')} (uid: {user.get('uid', -1)})"
-                for user in users
-            ])
+                for user in winners
+            ]
 
-            logger.info(brief)
-            await _send_notification(brief)
+            logger.info(f"天选时刻({lot_id})：发送“{danmu}”获得 {award}×{num}：{', '.join(winner_lines)}")
+            await _send_notification(build_award_message(award, num, danmu, winner_lines))
         except Exception as e:
             logger.error(f"failed to get anchor award: {e}")
 
@@ -93,3 +86,18 @@ def get_handler(
 
 
     return empty_handler
+
+
+def build_award_message(award: str, num: int, danmu: str, winner_lines: list[str]) -> RichMessage:
+    return RichMessage(blocks=[
+        Heading("天选时刻开奖"),
+        Paragraph([
+            Text("奖品："),
+            Text(f"{award} × {num}", bold=True),
+            Text(f"\n口令：“{danmu}”"),
+        ]),
+        Paragraph([
+            Text("中奖用户：", bold=True),
+            Text("\n" + "\n".join(winner_lines) if winner_lines else "\n无"),
+        ]),
+    ])

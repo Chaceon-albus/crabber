@@ -164,7 +164,7 @@ class Crabber:
         return danmaku
 
 
-    def get_service(self, service_type: type[TService]) -> TService | None:
+    def get_service(self, service_type: type[TService], *, warn_missing: bool = True) -> TService | None:
         service_name = service_type.service_name
 
         if not service_name:
@@ -174,7 +174,7 @@ class Crabber:
         service = self.services.get(service_name)
 
         if service is None:
-            self.logger.warning(f"{service_name} service not found")
+            if warn_missing: self.logger.warning(f"{service_name} service not found")
             return None
 
         if not isinstance(service, service_type):

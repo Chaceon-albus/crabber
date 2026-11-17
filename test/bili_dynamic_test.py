@@ -11,7 +11,8 @@ from bilibili_api.dynamic import Dynamic
 from crabber.misc import jsonify
 from crabber.logging import logger
 from crabber.services import init_services, NapCatService
-from crabber.components.parrot import build_message_from_module
+from crabber.components.parrot import build_dynamic_message
+from crabber.rich_message import to_markdown, to_onebot
 
 
 async def main():
@@ -35,12 +36,12 @@ async def main():
 
     item = info.get("item", {})
 
-    prefix = ""
-    content = []
-    content += build_message_from_module(item.get("modules", {}).get("module_dynamic", {}), prefix=prefix)
-    content += build_message_from_module(item.get("orig", {}).get("modules", {}).get("module_dynamic", {}), prefix="\n原动态：\n")
+    message = build_dynamic_message(item, did)
+    content = to_onebot(message)
 
     print(content)
+    print(to_markdown(message))
+    print(message.buttons)
 
     user = input("send to user via napcat: ").strip()
 

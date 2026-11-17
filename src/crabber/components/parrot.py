@@ -9,9 +9,10 @@ from bilibili_api.user import User
 from bilibili_api.video import Video
 
 from crabber.crabber import Crabber
-from crabber.services import NapCatService
 from crabber.components import empty_handler
-from crabber.misc import jsonify
+from crabber.misc import ensure_bili_url, jsonify, resize_bili_image
+from crabber.qq_send import has_qq_service, send_qq_message
+from crabber.rich_message import Block, Heading, Image, Inline, LinkButton, Paragraph, Quote, RichMessage, Text
 
 
 default_events = []
@@ -35,9 +36,10 @@ def get_handler(
     groups = groups or []
     users = users or []
 
-    async def parrot_forward_dynamic(dn: Dynamic, prefix: str="") -> None:
+    async def parrot_forward_dynamic(dn: Dynamic, header: str="") -> None:
 
-        if (napcat := ctx.get_service(NapCatService)) is None:
+        if not has_qq_service(ctx):
+            logger.warning("parrot requires qqbot or napcat service")
             return
 
         try:
@@ -60,24 +62,12 @@ def get_handler(
         # 2. major -> opus -> summary + pics
         # 3. orig -> modules -> module_dynamic -> (1) + (2)
 
-        content = []
-        content += build_message_from_module(item.get("modules", {}).get("module_dynamic", {}), prefix=prefix)
-        content += build_message_from_module(item.get("orig", {}).get("modules", {}).get("module_dynamic", {}), prefix="\n原动态：\n")
+        message = build_dynamic_message(item, dn.get_dynamic_id(), header=header)
 
-        if content:
-            # add dynamic link if not DYNAMIC_TYPE_AV
-            if not _get_bvid(item):
-                content += [{
-                    "type": "text",
-                    "data": { "text": "\n" }
-                }, {
-                    "type": "text",
-                    "data": { "text": f"动态地址：https://t.bilibili.com/{dn.get_dynamic_id()}" }
-                }]
-
-            logger.debug(f"sending {content}")
-            await napcat.send_msg_concurrently(content, groups, users)
-            logger.info(f"success to forward dynamic {dn.get_dynamic_id()} to group {groups} and user {users}")
+        if message.blocks:
+            logger.debug(f"sending {message}")
+            await send_qq_message(ctx, message, groups, users)
+            logger.info(f"forwarded dynamic {dn.get_dynamic_id()} to group {groups} and user {users}")
 
         if dn.credential.has_sessdata():
             await parrot_post_process_noexcept(dn, item)
@@ -105,7 +95,7 @@ def get_handler(
                 for dynamic in dynamics:
 
                     dn = None
-                    parrot_prefix = ""
+                    parrot_header = ""
 
                     if (id_str:=dynamic.get("id_str", "")):
 
@@ -141,25 +131,25 @@ def get_handler(
                                 case "DYNAMIC_TYPE_AV":
                                     # video
                                     # dynamic["modules"]["module_dynamic"]["major"]["archive"] -> bvid, cover(http), title
-                                    parrot_prefix = f"{author_name}发布了视频：\n"
+                                    parrot_header = f"{author_name}发布了视频"
                                     dn = Dynamic(dynamic_id, ctx.room.credential)
                                 case "DYNAMIC_TYPE_DRAW":
                                     # some general types?
-                                    parrot_prefix = f"{author_name}发布了动态：\n"
+                                    parrot_header = f"{author_name}发布了动态"
                                     # dynamic["modules"]["module_dynamic"]["major"]["opus"]["summary"]["rich_text_nodes or text"]
                                     # dynamic["modules"]["module_dynamic"]["major"]["opus"]["pics"][?]["url"](http)
                                     dn = Dynamic(dynamic_id, ctx.room.credential)
                                 case "DYNAMIC_TYPE_FORWARD":
                                     # dynamic["modules"]["module_dynamic"]["desc"]["rich_text_nodes or text"]
                                     # dynamic["orig"]["modules"]...
-                                    parrot_prefix = f"{author_name}转发了内容：\n"
+                                    parrot_header = f"{author_name}转发了内容"
                                     dn = Dynamic(dynamic_id, ctx.room.credential)
                                 case _:
                                     logger.info(f"unknown dynamic type {dynamic_type}")
                                     logger.debug(jsonify(dynamic))
 
                     if dn:
-                        await parrot_forward_dynamic(dn, parrot_prefix)
+                        await parrot_forward_dynamic(dn, parrot_header)
                         await asyncio.sleep(cooldown)
                         # Best-effort forwarding intentionally treats missed forwards as handled.
                         dynamic_memory[id_str] = True
@@ -213,193 +203,159 @@ def get_handler(
     return empty_handler
 
 
-def build_message_from_module(module_dynamic: dict, prefix: str="") -> list[dict]:
-
-    content = []
-
-    desc = module_dynamic.get("desc", {})
-    major = module_dynamic.get("major", {})
-
-    # make sure all dict
-    desc = desc if desc else {}
-    major = major if major else {}
-
-    opus = major.get("opus", {})
-    archive = major.get("archive", {})
-
-    # make sure all dict
-    opus = opus if opus else {}
-    archive = archive if archive else {}
-
-    if desc or opus or archive:
-
-        if prefix:
-            content += [{
-                "type": "text",
-                "data": { "text": prefix }
-            }]
-
-        content += desc_to_message(desc)
-        content += opus_to_message(opus)
-        content += archive_to_message(archive)
+# display width of dynamic pictures in markdown
+SINGLE_PIC_WIDTH = 640
+MULTI_PIC_WIDTH = 360
+# 16:10, the usual ratio of video covers
+VIDEO_COVER_WIDTH, VIDEO_COVER_HEIGHT = 640, 400
 
 
-    return content
+def build_dynamic_message(item: dict, dynamic_id: int | str, header: str="") -> RichMessage:
+
+    modules = item.get("modules") or {}
+    orig = item.get("orig") or {}
+    orig_modules = orig.get("modules") or {}
+
+    main_blocks, main_buttons = build_blocks_from_module(modules.get("module_dynamic") or {})
+    orig_blocks, orig_buttons = build_blocks_from_module(orig_modules.get("module_dynamic") or {})
+
+    message = RichMessage()
+
+    if not main_blocks and not orig_blocks:
+        return message
+
+    if header:
+        message.blocks.append(Heading(header))
+
+    message.blocks += main_blocks
+
+    if orig_blocks:
+        orig_author = (orig_modules.get("module_author") or {}).get("name", "")
+        title = f"原动态 @{orig_author}" if orig_author else "原动态"
+        message.blocks.append(Quote([Paragraph([Text(title, bold=True)]), *orig_blocks]))
+
+    message.buttons += main_buttons + orig_buttons
+
+    # a video already comes with its own link
+    if not _get_bvid(item):
+        message.buttons.append(LinkButton("打开动态", f"https://t.bilibili.com/{dynamic_id}"))
+
+    return message
 
 
-def ensure_bili_url(url: str) -> str:
-    url = f"https:{url}" if url.startswith("//") else url
-    url = url.replace("http://", "https://", 1)
-    return url
+def build_blocks_from_module(module_dynamic: dict) -> tuple[list[Block], list[LinkButton]]:
+
+    major = module_dynamic.get("major") or {}
+
+    blocks: list[Block] = []
+    blocks += desc_to_blocks(module_dynamic.get("desc") or {})
+    blocks += opus_to_blocks(major.get("opus") or {})
+
+    archive_blocks, buttons = archive_to_blocks(major.get("archive") or {})
+    blocks += archive_blocks
+
+    return blocks, buttons
 
 
-def desc_to_message(desc: dict) -> list[dict]:
+def desc_to_blocks(desc: dict) -> list[Block]:
 
-    rich_text_nodes = desc.get("rich_text_nodes", [])
-    text = desc.get("text", "")
+    inlines: list[Inline] = []
 
-    if rich_text_nodes:
-        content = rich_text_to_message(rich_text_nodes)
-    else:
-        content = [{
-            "type": "text",
-            "data": { "text": text }
-        }]
+    if (rich_text_nodes := desc.get("rich_text_nodes")):
+        inlines = rich_text_to_inlines(rich_text_nodes)
+    elif (text := desc.get("text")):
+        inlines = [Text(text)]
 
-    return content
+    if not inlines:
+        return []
 
-
-def opus_to_message(opus: dict) -> list[dict]:
-
-    content = []
-
-    if (title:=opus.get("title", "")):
-        content += [{
-            "type": "text",
-            "data": { "text": f"{title}\n" }
-        }]
-
-    summary = opus.get("summary", {})
-    summary = summary if summary else {}
-
-    if summary:
-        # normal dynamic
-        rich_text_nodes = summary.get("rich_text_nodes", [])
-        text = summary.get("text", "")
-
-        if rich_text_nodes:
-            content += rich_text_to_message(rich_text_nodes)
-            content += [{
-                "type": "text",
-                "data": { "text": "\n" }
-            }]
-        elif text:
-            # fallback to text
-            content += [{
-                "type": "text",
-                "data": { "text": text }
-            }, {
-                "type": "text",
-                "data": { "text": "\n" }
-            }]
-        else:
-            # should not happen?
-            pass
-
-    for pic in opus.get("pics", []):
-        if not isinstance(pic, dict): continue
-        url: str = pic.get("url", "")
-        if isinstance(url, str):
-            content += [{
-                "type": "image",
-                "data": { "file": ensure_bili_url(url) }
-            }]
-
-    if content:
-        last_chunk = content[-1]
-        if last_chunk["type"]=="text" and last_chunk["data"]["text"]=="\n":
-            # trim the tailing newline
-            content.pop(-1)
-
-    return content
+    return [Paragraph(inlines)]
 
 
-def archive_to_message(archive: dict) -> list[dict]:
+def opus_to_blocks(opus: dict) -> list[Block]:
 
-    content = []
+    blocks: list[Block] = []
 
-    title: str = archive.get("title", "")
-    cover: str = ensure_bili_url(archive.get("cover", ""))
-    jump_url: str = ensure_bili_url(archive.get("jump_url", ""))
+    if (title := (opus.get("title") or "").strip()):
+        blocks.append(Paragraph([Text(title, bold=True)]))
+
+    summary = opus.get("summary") or {}
+
+    if (rich_text_nodes := summary.get("rich_text_nodes")):
+        blocks.append(Paragraph(rich_text_to_inlines(rich_text_nodes)))
+    elif (text := summary.get("text")):
+        blocks.append(Paragraph([Text(text)]))
+
+    pics = [pic for pic in (opus.get("pics") or []) if isinstance(pic, dict) and isinstance(pic.get("url"), str) and pic["url"]]
+    max_width = SINGLE_PIC_WIDTH if len(pics) == 1 else MULTI_PIC_WIDTH
+
+    if pics:
+        blocks.append(Paragraph([
+            Image(ensure_bili_url(pic["url"]), *_fit_size(pic.get("width"), pic.get("height"), max_width), alt="图片")
+            for pic in pics
+        ]))
+
+    return blocks
+
+
+def archive_to_blocks(archive: dict) -> tuple[list[Block], list[LinkButton]]:
+
+    blocks: list[Block] = []
+    buttons: list[LinkButton] = []
+
+    title: str = (archive.get("title") or "").strip()
+    cover: str = archive.get("cover") or ""
+    bvid: str = archive.get("bvid") or ""
+    jump_url: str = ensure_bili_url((archive.get("jump_url") or "").strip())
 
     if cover:
-        # no need to add additional line after an image
-        content += [{
-            "type": "image",
-            "data": { "file": cover }
-        }]
+        if (resized := resize_bili_image(cover, VIDEO_COVER_WIDTH, VIDEO_COVER_HEIGHT)):
+            blocks.append(Paragraph([Image(resized, VIDEO_COVER_WIDTH, VIDEO_COVER_HEIGHT, alt="视频封面")]))
+        else:
+            blocks.append(Paragraph([Image(ensure_bili_url(cover), alt="视频封面")]))
 
     if title:
-        content += [{
-            "type": "text",
-            "data": { "text": title.strip() }
-        }, {
-            "type": "text",
-            "data": { "text": "\n" }
-        }]
+        blocks.append(Paragraph([Text(title, bold=True)]))
+
+    if not jump_url and bvid:
+        jump_url = f"https://www.bilibili.com/video/{bvid}"
 
     if jump_url:
-        content += [{
-            "type": "text",
-            "data": { "text": jump_url.strip() }
-        }, {
-            "type": "text",
-            "data": { "text": "\n" }
-        }]
+        buttons.append(LinkButton("打开视频", jump_url))
 
-    return content
+    return blocks, buttons
 
 
-def rich_text_to_message(nodes: list) -> list[dict]:
+def rich_text_to_inlines(nodes: list) -> list[Inline]:
 
-    content = []
+    inlines: list[Inline] = []
 
     for node in nodes:
-        match node.get("type", ""):
-            case "RICH_TEXT_NODE_TYPE_TEXT":
-                if text:=node.get("text"):
-                    content += [{
-                        "type": "text",
-                        "data": { "text": text }
-                    }]
-            case "RICH_TEXT_NODE_TYPE_AT":
-                if text:=node.get("text"):
-                    content += [{
-                        "type": "text",
-                        "data": { "text": text }
-                    }]
-            case "RICH_TEXT_NODE_TYPE_EMOJI":
-                icon = ensure_bili_url(node.get("emoji", {}).get("icon_url", ""))
-                text = node.get("text", "")
-                if icon:
-                    content += [{
-                        "type": "image",
-                        "data": { "file": icon }
-                    }]
-                else:
-                    content += [{
-                        "type": "text",
-                        "data": { "text": text }
-                    }]
-            case _:
-                # unknown node type, try to extract text
-                if text:=node.get("text"):
-                    content += [{
-                        "type": "text",
-                        "data": { "text": text }
-                    }]
+        if not isinstance(node, dict): continue
 
-    return content
+        text = node.get("text") or ""
+
+        match node.get("type", ""):
+            case "RICH_TEXT_NODE_TYPE_EMOJI":
+                icon = ensure_bili_url((node.get("emoji") or {}).get("icon_url") or "")
+                if icon:
+                    inlines.append(Image(icon, alt=text, emoji=True))
+                elif text:
+                    inlines.append(Text(text))
+            case _:
+                # text, @, topic, link and unknown node types: keep the text
+                if text:
+                    inlines.append(Text(text))
+
+    return inlines
+
+
+def _fit_size(width: object, height: object, max_width: int) -> tuple[int, int]:
+    if not isinstance(width, int) or not isinstance(height, int) or width <= 0 or height <= 0:
+        return 0, 0
+    if width <= max_width:
+        return width, height
+    return max_width, max(1, round(height * max_width / width))
 
 
 def _get_bvid(dynamic_info_item: dict) -> str | None:

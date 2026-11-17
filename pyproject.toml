@@ -15,6 +15,7 @@ dependencies = [
     "cloudflare>=5.2.0",
     "dashscope>=1.25.23",
     "openai[aiohttp]>=2.41.0",
+    "pyqbot",
     "sqlmodel>=0.0.38",
 ]
 
@@ -24,3 +25,6 @@ crabber = "crabber.main:main"
 [build-system]
 requires = ["uv_build>=0.10.12,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+pyqbot = { git = "https://github.com/capric98/pyqbot", rev = "345d20348f490303fee4863127412022dd9b50af" }
