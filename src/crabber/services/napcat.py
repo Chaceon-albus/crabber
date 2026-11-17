@@ -66,32 +66,38 @@ class NapCatService(BaseService):
             return resp_json
 
 
-    async def send_msg_concurrently(self, content: str | list, groups: list, users: list) -> None:
-        try:
+    async def send_msg_concurrently(self, content: str | list, groups: list, users: list) -> tuple[list, list]:
+        """Returns the groups and users that the message was sent to."""
 
-            group_tasks = [self.send_msg(
-                message_type="group",
-                group_id=f"{gid}",
-                message=content,
-            ) for gid in groups]
+        group_tasks = [self.send_msg(
+            message_type="group",
+            group_id=f"{gid}",
+            message=content,
+        ) for gid in groups]
 
-            private_tasks = [self.send_msg(
-                message_type="private",
-                user_id=f"{uid}",
-                message=content,
-            ) for uid in users]
+        private_tasks = [self.send_msg(
+            message_type="private",
+            user_id=f"{uid}",
+            message=content,
+        ) for uid in users]
 
-            results = await asyncio.gather(*group_tasks, *private_tasks, return_exceptions=True)
-            all_ids = groups + users
+        results = await asyncio.gather(*group_tasks, *private_tasks, return_exceptions=True)
+        targets = [("group", gid) for gid in groups] + [("user", uid) for uid in users]
 
-            for k, res in enumerate(results):
-                if isinstance(res, Exception):
-                    self.logger.error(f"failed to send to {all_ids[k]}: {res}")
+        sent_groups, sent_users = [], []
 
-        except Exception as e:
-            self.logger.error(f"failed to send msg: {e}")
-        else:
-            self.logger.debug(f"message = {content}")
+        for (kind, target), res in zip(targets, results):
+            if isinstance(res, BaseException):
+                self.logger.error(f"failed to send to {kind} {target}: {res}")
+            elif isinstance(res, dict) and res.get("status") == "failed":
+                # OneBot reports some failures with HTTP 200
+                self.logger.error(f"failed to send to {kind} {target}: {jsonify(res)}")
+            else:
+                (sent_groups if kind == "group" else sent_users).append(target)
+
+        self.logger.debug(f"message = {content}")
+
+        return sent_groups, sent_users
 
 
     async def send_msg_sequentially(self, content: str | list, groups: list, users: list, cooldown: int=2) -> None:

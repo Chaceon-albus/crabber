@@ -56,39 +56,48 @@ class QQBotService(BaseService):
         return to_markdown(message), self._keyboard(message.buttons)
 
 
-    async def send_msg_concurrently(self, message: RichMessage, groups: list, users: list) -> None:
-        """Send to QQ group / user numbers, numbers without an openid are skipped."""
+    async def send_msg_concurrently(self, message: RichMessage, groups: list, users: list) -> tuple[list, list]:
+        """Send to QQ group / user numbers, numbers without an openid are skipped.
+
+        Returns the groups and users that the message was sent to.
+        """
 
         markdown, keyboard = self.render(message)
 
         if not markdown:
             self.logger.warning("qqbot got an empty message, skipping")
-            return
+            return [], []
 
-        targets: list[str] = []
+        targets: list[tuple[str, int | str]] = []
         tasks = []
 
         for gid in groups:
             if (openid := self.group_openid(gid)) is None:
                 self.logger.warning(f"qqbot has no openid for group {gid}, skipping")
                 continue
-            targets.append(f"group {gid}")
+            targets.append(("group", gid))
             tasks.append(self.client.groups.send_message(openid, markdown=markdown, keyboard=keyboard))
 
         for uid in users:
             if (openid := self.user_openid(uid)) is None:
                 self.logger.warning(f"qqbot has no openid for user {uid}, skipping")
                 continue
-            targets.append(f"user {uid}")
+            targets.append(("user", uid))
             tasks.append(self.client.users.send_message(openid, markdown=markdown, keyboard=keyboard))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for target, res in zip(targets, results):
+        sent_groups, sent_users = [], []
+
+        for (kind, target), res in zip(targets, results):
             if isinstance(res, BaseException):
-                self.logger.error(f"qqbot failed to send to {target}: {res}")
+                self.logger.error(f"qqbot failed to send to {kind} {target}: {res}")
+            else:
+                (sent_groups if kind == "group" else sent_users).append(target)
 
         self.logger.debug(f"markdown = {markdown}")
+
+        return sent_groups, sent_users
 
 
     def _keyboard(self, buttons: list[LinkButton]) -> pyqbot.Keyboard | None:

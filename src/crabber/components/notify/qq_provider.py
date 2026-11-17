@@ -28,9 +28,12 @@ async def send_notify(
     if not room.cover:
         logger.warning(f"cover url not found in {room}")
 
-    await send_qq_message(ctx, build_live_message(room), groups, users)
+    result = await send_qq_message(ctx, build_live_message(room), groups, users)
 
-    logger.info(f"sent notify to group {groups} and user {users}")
+    if result.any_sent:
+        logger.info(f"sent notify to group {result.sent_groups} and user {result.sent_users}")
+    if result.any_unsent:
+        logger.warning(f"notify not sent to group {result.unsent_groups} and user {result.unsent_users}")
 
 
 def build_live_message(room: RoomInfo) -> RichMessage:

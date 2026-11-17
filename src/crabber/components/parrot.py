@@ -66,8 +66,11 @@ def get_handler(
 
         if message.blocks:
             logger.debug(f"sending {message}")
-            await send_qq_message(ctx, message, groups, users)
-            logger.info(f"forwarded dynamic {dn.get_dynamic_id()} to group {groups} and user {users}")
+            result = await send_qq_message(ctx, message, groups, users)
+            if result.any_sent:
+                logger.info(f"forwarded dynamic {dn.get_dynamic_id()} to group {result.sent_groups} and user {result.sent_users}")
+            if result.any_unsent:
+                logger.warning(f"dynamic {dn.get_dynamic_id()} not forwarded to group {result.unsent_groups} and user {result.unsent_users}")
 
         if dn.credential.has_sessdata():
             await parrot_post_process_noexcept(dn, item)
